@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation'
 import { getAccountById } from '@/lib/accounts-db'
 import { getTransactions } from '@/lib/family-transactions'
 import type { FamilyTransaction } from '@/lib/family-transactions'
+import { BottomNav } from '@/components/BottomNav'
 
 function AmountLabel({ tx }: { tx: FamilyTransaction }) {
   const colorClass =
@@ -27,7 +28,7 @@ export default async function AccountDetailPage({
   const transactions = await getTransactions({ accountId: account.id })
 
   return (
-    <main className="min-h-screen bg-[#faf7f0] text-slate-950">
+    <main className="min-h-screen bg-[#faf7f0] pb-20 text-slate-950">
       <div className="mx-auto max-w-2xl px-4 py-6">
         <Link
           href="/accounts"
@@ -36,7 +37,6 @@ export default async function AccountDetailPage({
           ← 返回帳戶列表
         </Link>
 
-        {/* Account info card */}
         <div className="mt-4 rounded-lg border-2 border-slate-950 bg-white p-5 shadow-[6px_6px_0_#00c2ff]">
           <h1 className="text-xl font-black">{account.name}</h1>
           <div className="mt-2 flex flex-wrap gap-2">
@@ -55,7 +55,6 @@ export default async function AccountDetailPage({
           </p>
         </div>
 
-        {/* Transaction list */}
         <div className="mt-6">
           <h2 className="mb-3 text-sm font-black text-slate-600">交易記錄</h2>
           {transactions.length === 0 ? (
@@ -82,6 +81,7 @@ export default async function AccountDetailPage({
           )}
         </div>
       </div>
+      <BottomNav />
     </main>
   )
 }
