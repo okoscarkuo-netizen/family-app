@@ -40,7 +40,7 @@ export function BottomNav() {
           aria-current={isActive(tab.href) ? 'page' : undefined}
           className={tabClass(isActive(tab.href))}
         >
-          {tab.icon} {tab.label}
+          {tab.label}
         </Link>
       ))}
 
@@ -59,7 +59,7 @@ export function BottomNav() {
           aria-current={isActive(tab.href) ? 'page' : undefined}
           className={tabClass(isActive(tab.href))}
         >
-          {tab.icon} {tab.label}
+          {tab.label}
         </Link>
       ))}
     </nav>
