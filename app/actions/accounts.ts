@@ -27,7 +27,7 @@ export async function createAccount(formData: FormData) {
     .select('sort_order')
     .order('sort_order', { ascending: false })
     .limit(1)
-    .single()
+    .maybeSingle()
   const sortOrder = (maxRow?.sort_order ?? 0) + 1
 
   const id = `manual-${Date.now()}-${name.slice(0, 20).replace(/\s+/g, '-')}`
