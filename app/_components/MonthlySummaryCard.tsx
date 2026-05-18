@@ -14,7 +14,7 @@ export function MonthlySummaryCard({ transactions, month }: Props) {
   const income = transactions.filter(t => t.kind === 'income').reduce((s, t) => s + t.amount, 0)
   const expense = transactions.filter(t => t.kind === 'expense').reduce((s, t) => s + t.amount, 0)
   const balance = income - expense
-  const savingRatio = income > 0 ? Math.min((income - expense) / income, 1) : 0
+  const savingRatio = income > 0 ? Math.max(0, Math.min((income - expense) / income, 1)) : 0
 
   return (
     <Link href="/ledger" className="block">
