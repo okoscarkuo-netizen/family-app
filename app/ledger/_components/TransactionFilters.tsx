@@ -25,18 +25,18 @@ export function TransactionFilters({ accounts, currentYear, currentMonth }: Prop
   return (
     <div className="flex gap-2 items-center">
       <select
-        value={currentYear}
+        value={String(currentYear)}
         onChange={e => updateParam('year', e.target.value)}
         className="px-2 py-1.5 bg-white border border-gray-200 rounded-lg text-sm"
       >
-        {years.map(y => <option key={y} value={y}>{y} 年</option>)}
+        {years.map(y => <option key={y} value={String(y)}>{y} 年</option>)}
       </select>
       <select
-        value={currentMonth}
+        value={String(currentMonth)}
         onChange={e => updateParam('month', e.target.value)}
         className="px-2 py-1.5 bg-white border border-gray-200 rounded-lg text-sm"
       >
-        {months.map(m => <option key={m} value={m}>{m} 月</option>)}
+        {months.map(m => <option key={m} value={String(m)}>{m} 月</option>)}
       </select>
       <select
         value={searchParams.get('accountId') ?? ''}
