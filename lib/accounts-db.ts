@@ -14,11 +14,14 @@ export async function getAccounts(): Promise<FamilyAccount[]> {
     .order('sort_order', { ascending: true })
     .order('created_at', { ascending: true })
 
-  if (error) return []
+  if (error) {
+    console.error('[accounts-db] getAccounts error:', error)
+    return []
+  }
 
   // Seed from initialAccounts on first use (mirrors /api/accounts GET behaviour)
   if (!data?.length) {
-    const rows = initialAccounts.map(accountToRow)
+    const rows = initialAccounts.map((acc, i) => accountToRow(acc, i))
     await supabase.from('family_accounts').upsert(rows, { onConflict: 'id' })
     return initialAccounts
   }
@@ -30,13 +33,16 @@ export async function getAccountById(id: string): Promise<FamilyAccount | null> 
   const supabase = createAdminClient()
   if (!supabase) return null
 
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('family_accounts')
     .select('id, name, type, owner, kind, balance, currency, hidden, sort_order')
     .eq('id', id)
     .eq('is_archived', false)
     .single()
 
-  if (!data) return null
+  if (error || !data) {
+    if (error) console.error('[accounts-db] getAccountById error:', error)
+    return null
+  }
   return accountFromRow(data as AccountRow)
 }

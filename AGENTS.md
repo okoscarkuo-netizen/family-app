@@ -1,5 +1,10 @@
-<!-- BEGIN:nextjs-agent-rules -->
-# This is NOT the Next.js you know
+# 專案目標
+家庭記帳與管理 App。核心功能：
+1. **家庭資產管理**：記錄收支、帳戶餘額、淨資產追蹤
+2. **家事提醒**：地產稅、報稅、牌照稅、HOA、車庫保養、車子保養、濾芯更換、冷氣保養等定期或一次性任務
 
-This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
-<!-- END:nextjs-agent-rules -->
+# Next.js 讀取規則
+優先參考現有程式碼。只在處理 routing、Server Actions、Proxy/Middleware、metadata、caching、PWA、deployment 等 Next.js 特定行為時，才讀 `node_modules/next/dist/docs/` 裡的相關指南。小型 UI、文案、樣式、本地重構不需要查文件。
+
+# 確認優先原則
+小型、明確、可還原的請求直接執行並回報變更。只有在多個目標衝突、大型產品決策、破壞性操作、正式部署、資料遷移、或不明確的取捨時，才詢問使用者確認。
