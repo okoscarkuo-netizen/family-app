@@ -19,7 +19,7 @@ export function BottomNav() {
   }
 
   return (
-    <nav aria-label="底部導航" className="fixed bottom-0 left-0 right-0 z-50 border-t-2 border-slate-950 bg-[#fff45f]">
+    <nav aria-label="底部導航" className="fixed bottom-0 left-0 right-0 z-50 rounded-t-xl border-2 border-slate-950 bg-[#fff45f] shadow-[4px_-4px_0_#111827]">
       <div className="mx-auto grid max-w-lg grid-cols-4">
         {tabs.map(tab => {
           const active = isActive(tab.href)
