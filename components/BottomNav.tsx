@@ -19,29 +19,26 @@ export function BottomNav() {
   }
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 px-4 pb-4">
-      <nav
-        aria-label="底部導航"
-        className="mx-auto grid max-w-lg grid-cols-4 overflow-hidden rounded-xl border-2 border-slate-950 bg-[#fff45f] shadow-[4px_4px_0_#111827]"
-      >
-        {tabs.map(tab => {
-          const active = isActive(tab.href)
-          return (
-            <Link
-              key={tab.href}
-              href={tab.href}
-              aria-label={tab.label}
-              aria-current={active ? 'page' : undefined}
-              className={`flex flex-col items-center py-3 ${active ? 'bg-white' : ''}`}
-            >
-              <span className="text-xl leading-none">{tab.icon}</span>
-              <span className={`mt-0.5 text-[10px] ${active ? 'font-black text-slate-950' : 'font-semibold text-slate-950'}`}>
-                {tab.label}
-              </span>
-            </Link>
-          )
-        })}
-      </nav>
-    </div>
+    <nav
+      aria-label="底部導航"
+      className="fixed inset-x-0 bottom-0 z-50 grid grid-cols-4 items-center gap-1 border-t-2 border-slate-950 bg-white/95 px-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 shadow-[0_-10px_0_#00c2ff] backdrop-blur"
+    >
+      {tabs.map(tab => {
+        const active = isActive(tab.href)
+        return (
+          <Link
+            key={tab.href}
+            href={tab.href}
+            aria-label={tab.label}
+            aria-current={active ? 'page' : undefined}
+            className={`rounded-md px-2 py-2.5 text-center text-xs font-black ${
+              active ? 'bg-[#ff3d9a] text-white' : 'text-slate-700 hover:bg-[#fff45f]'
+            }`}
+          >
+            {tab.icon} {tab.label}
+          </Link>
+        )
+      })}
+    </nav>
   )
 }

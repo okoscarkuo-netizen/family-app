@@ -16,7 +16,7 @@ export default async function HomePage() {
   ])
 
   return (
-    <main className="min-h-screen bg-[#faf7f0] pb-28">
+    <main className="min-h-screen bg-[#faf7f0] pb-20">
       <div className="mx-auto max-w-lg px-4 py-6">
         <div className="mb-5">
           <p className="text-[10px] font-black uppercase tracking-wide text-slate-500">家庭中控</p>

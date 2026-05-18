@@ -35,7 +35,7 @@ export default async function LedgerPage({ searchParams }: PageProps) {
   ])
 
   return (
-    <main className="min-h-screen bg-[#faf7f0] pb-28">
+    <main className="min-h-screen bg-[#faf7f0] pb-20">
       <div className="mx-auto max-w-lg px-4 py-6">
         <div className="mb-5 flex items-center justify-between">
           <h1 className="text-lg font-black text-slate-950">帳本</h1>
