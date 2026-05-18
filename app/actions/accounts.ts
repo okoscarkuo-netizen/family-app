@@ -77,7 +77,7 @@ export async function updateAccount(id: string, formData: FormData) {
 
   if (error) throw new Error(error.message)
   revalidatePath('/accounts')
-  revalidatePath(`/accounts/${id}`)
+  revalidatePath(`/accounts/${encodeURIComponent(id)}`)
 }
 
 export async function archiveAccount(id: string) {

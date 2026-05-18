@@ -33,15 +33,16 @@ export function AccountList({ accounts }: Props) {
     setEditingAccount(null)
   }
 
-  const assetTotal = accounts
+  const visibleAccounts = accounts.filter(a => !a.hidden)
+
+  const assetTotal = visibleAccounts
     .filter(a => a.kind === 'asset')
     .reduce((sum, a) => sum + a.balance, 0)
-  const liabilityTotal = accounts
+  const liabilityTotal = visibleAccounts
     .filter(a => a.kind === 'liability')
     .reduce((sum, a) => sum + a.balance, 0)
   const net = assetTotal - liabilityTotal
 
-  const visibleAccounts = accounts.filter(a => !a.hidden)
   const groupedAccounts = accountGroupOrder
     .map(group => ({
       group,

@@ -21,12 +21,10 @@ export default async function AccountDetailPage({
   params: Promise<{ id: string }>
 }) {
   const { id } = await params
-  const [account, transactions] = await Promise.all([
-    getAccountById(decodeURIComponent(id)),
-    getTransactions({ accountId: decodeURIComponent(id) }),
-  ])
-
+  const account = await getAccountById(decodeURIComponent(id))
   if (!account) notFound()
+
+  const transactions = await getTransactions({ accountId: account.id })
 
   return (
     <main className="min-h-screen bg-[#faf7f0] text-slate-950">
