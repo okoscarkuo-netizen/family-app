@@ -4,6 +4,7 @@ import { getTransactions } from '@/lib/family-transactions'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { TransactionList } from '@/app/ledger/_components/TransactionList'
 import { TransactionFilters } from '@/app/ledger/_components/TransactionFilters'
+import { BottomNav } from '@/components/BottomNav'
 import type { FamilyAccount } from '@/lib/finance/types'
 
 async function getActiveAccounts(): Promise<Pick<FamilyAccount, 'id' | 'name'>[]> {
@@ -34,20 +35,18 @@ export default async function LedgerPage({ searchParams }: PageProps) {
   ])
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-lg mx-auto px-4 py-6">
-        {/* 標題列 */}
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="text-lg font-semibold text-gray-800">帳本</h1>
+    <main className="min-h-screen bg-[#faf7f0] pb-20">
+      <div className="mx-auto max-w-lg px-4 py-6">
+        <div className="mb-5 flex items-center justify-between">
+          <h1 className="text-lg font-black text-slate-950">帳本</h1>
           <Link
             href="/ledger/new"
-            className="bg-indigo-600 text-white text-sm px-4 py-2 rounded-lg hover:bg-indigo-700"
+            className="rounded-md border-2 border-slate-950 bg-[#ff3d9a] px-4 py-2 text-sm font-black text-white shadow-[3px_3px_0_#111827] hover:bg-[#e92b87]"
           >
             ＋ 新增
           </Link>
         </div>
 
-        {/* 篩選器 */}
         <div className="mb-4">
           <Suspense>
             <TransactionFilters
@@ -58,9 +57,9 @@ export default async function LedgerPage({ searchParams }: PageProps) {
           </Suspense>
         </div>
 
-        {/* 列表 */}
         <TransactionList transactions={transactions} />
       </div>
-    </div>
+      <BottomNav />
+    </main>
   )
 }
