@@ -61,7 +61,7 @@ function getSupabaseOrResponse():
   }
 }
 
-export async function GET(_request: NextRequest) {
+export async function GET() {
   if (!await isAuthenticated()) return unauthorized();
 
   const { supabase, response } = getSupabaseOrResponse();
