@@ -31,15 +31,25 @@ export async function createTransaction(formData: FormData) {
   const categoryName = str(formData.get('category_name'))
   const title = merchant || categoryName || kind
 
+  const owner = str(formData.get('owner')) || '共同'
+  if (!['我', '老婆', '共同'].includes(owner)) {
+    throw new Error(`Invalid owner: ${owner}`)
+  }
+
+  const currency = str(formData.get('currency')) || 'TWD'
+  if (!['TWD', 'USD', 'JPY', 'CNY'].includes(currency)) {
+    throw new Error(`Invalid currency: ${currency}`)
+  }
+
   const payload = {
     kind,
     title,
-    amount: amountRaw,
-    currency: str(formData.get('currency')) || 'TWD',
+    amount: parseFloat(amountRaw.toFixed(2)),
+    currency,
     category_id: nullableStr(formData.get('category_id')),
     account_id: nullableStr(formData.get('account_id')),
     to_account_id: kind === 'transfer' ? nullableStr(formData.get('to_account_id')) : null,
-    owner: str(formData.get('owner')) || '共同',
+    owner,
     merchant,
     occurred_on: str(formData.get('occurred_on')) || new Date().toISOString().split('T')[0],
     note: nullableStr(formData.get('note')),
