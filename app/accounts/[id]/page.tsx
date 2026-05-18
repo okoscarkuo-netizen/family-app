@@ -28,7 +28,7 @@ export default async function AccountDetailPage({
   const transactions = await getTransactions({ accountId: account.id })
 
   return (
-    <main className="min-h-screen bg-[#faf7f0] pb-20 text-slate-950">
+    <main className="min-h-screen bg-[#faf7f0] pb-28 text-slate-950">
       <div className="mx-auto max-w-2xl px-4 py-6">
         <Link
           href="/accounts"
