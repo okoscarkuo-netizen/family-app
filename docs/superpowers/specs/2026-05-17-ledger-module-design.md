@@ -29,32 +29,20 @@ Family App 目前所有 UI 邏輯集中在 `app/dashboard.tsx`（單一 34K toke
 
 ---
 
+## 架構說明：為何用 family_* 系列表
+
+本 App 採用 **passcode 登入**（環境變數 `FAMILY_APP_PASSCODE`），不使用 Supabase Auth。
+現有 `transactions` 表要求 `household_id`（references households）和 `created_by`（references auth.users），在 passcode 模式下無法直接使用。
+
+比照 `family_accounts` 的做法：建立 `family_transactions` 和 `family_categories` 表，透過 **admin client（service role key）**存取，RLS 設定為 service role bypass。
+
 ## 資料庫調整
 
-### transactions 表補充欄位
+### 新增 family_categories 表
 
 ```sql
-ALTER TABLE public.transactions
-  ADD COLUMN merchant text,
-  ADD COLUMN currency text NOT NULL DEFAULT 'TWD',
-  ADD COLUMN owner text NOT NULL DEFAULT '共同',
-  ADD COLUMN account_id text REFERENCES public.family_accounts(id) ON DELETE SET NULL,
-  ADD COLUMN to_account_id text REFERENCES public.family_accounts(id) ON DELETE SET NULL;
-```
-
-> 注意：`family_accounts.id` 是 `text` 類型，因此 FK 欄位使用 `text`，不是 `uuid`。
-
-`kind` enum 補上 `transfer`：
-```sql
-ALTER TYPE transaction_kind ADD VALUE 'transfer';
-```
-
-### 新增 categories 表
-
-```sql
-CREATE TABLE public.categories (
+CREATE TABLE public.family_categories (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  household_id uuid REFERENCES public.households(id) ON DELETE CASCADE,
   name text NOT NULL,
   kind text NOT NULL CHECK (kind IN ('income', 'expense', 'transfer')),
   icon text,
@@ -62,12 +50,34 @@ CREATE TABLE public.categories (
   sort_order integer NOT NULL DEFAULT 0,
   is_archived boolean NOT NULL DEFAULT false,
   source_app text,
-  source_category_name text,
   created_at timestamptz NOT NULL DEFAULT now()
 );
 ```
 
 AndroMoney 分類預填（seed data），之後使用者可自行新增。
+
+### 新增 family_transactions 表
+
+```sql
+CREATE TABLE public.family_transactions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  kind text NOT NULL CHECK (kind IN ('income', 'expense', 'transfer')),
+  title text NOT NULL,
+  amount numeric(12, 2) NOT NULL CHECK (amount > 0),
+  currency text NOT NULL DEFAULT 'TWD',
+  category_id uuid REFERENCES public.family_categories(id) ON DELETE SET NULL,
+  account_id text REFERENCES public.family_accounts(id) ON DELETE SET NULL,
+  to_account_id text REFERENCES public.family_accounts(id) ON DELETE SET NULL,
+  owner text NOT NULL DEFAULT '共同' CHECK (owner IN ('我', '老婆', '共同')),
+  merchant text,
+  occurred_on date NOT NULL DEFAULT current_date,
+  note text,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+```
+
+> 注意：`account_id` / `to_account_id` 為 `text`（對應 `family_accounts.id` 的 `text` 類型）。
 
 ---
 
