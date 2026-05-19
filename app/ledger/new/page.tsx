@@ -1,7 +1,8 @@
-import Link from 'next/link'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getAllCategories } from '@/lib/family-transactions'
+import { getAllCategories, getLatestTransactionPreset } from '@/lib/family-transactions'
 import { TransactionForm } from '@/app/ledger/_components/TransactionForm'
+import { BottomNav } from '@/components/BottomNav'
+import { shellBackgroundClass } from '@/components/PageShell'
 import type { FamilyAccount } from '@/lib/finance/types'
 
 async function getActiveAccounts(): Promise<Pick<FamilyAccount, 'id' | 'name' | 'currency'>[]> {
@@ -16,24 +17,24 @@ async function getActiveAccounts(): Promise<Pick<FamilyAccount, 'id' | 'name' | 
 }
 
 export default async function NewTransactionPage() {
-  const [accounts, categories] = await Promise.all([
+  const [accounts, categories, latestPreset] = await Promise.all([
     getActiveAccounts(),
     getAllCategories(),
+    getLatestTransactionPreset(),
   ])
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-lg mx-auto px-4 py-6">
-        <div className="flex items-center gap-3 mb-6">
-          <Link href="/ledger" className="text-gray-400 hover:text-gray-600 text-sm">
-            ← 返回
-          </Link>
-          <h1 className="text-lg font-semibold text-gray-800">新增記錄</h1>
-        </div>
-        <div className="bg-white rounded-2xl p-6 shadow-sm">
-          <TransactionForm accounts={accounts} categories={categories} />
-        </div>
-      </div>
-    </div>
+    <>
+      <main className={shellBackgroundClass}>
+        <section className="mx-auto min-h-screen w-full max-w-md">
+          <TransactionForm
+            accounts={accounts}
+            categories={categories}
+            initialPreset={latestPreset}
+          />
+        </section>
+      </main>
+      <BottomNav />
+    </>
   )
 }
