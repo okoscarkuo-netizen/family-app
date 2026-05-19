@@ -5,15 +5,15 @@ import { BottomNav } from '@/components/BottomNav'
 import { shellBackgroundClass } from '@/components/PageShell'
 import type { FamilyAccount } from '@/lib/finance/types'
 
-async function getActiveAccounts(): Promise<Pick<FamilyAccount, 'id' | 'name' | 'currency'>[]> {
+async function getActiveAccounts(): Promise<Pick<FamilyAccount, 'id' | 'name' | 'currency' | 'kind' | 'balance'>[]> {
   const supabase = createAdminClient()
   if (!supabase) return []
   const { data } = await supabase
     .from('family_accounts')
-    .select('id, name, currency')
+    .select('id, name, currency, kind, balance')
     .eq('is_archived', false)
     .order('sort_order')
-  return (data ?? []) as Pick<FamilyAccount, 'id' | 'name' | 'currency'>[]
+  return (data ?? []) as Pick<FamilyAccount, 'id' | 'name' | 'currency' | 'kind' | 'balance'>[]
 }
 
 export default async function NewTransactionPage() {

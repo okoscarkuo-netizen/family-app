@@ -2,6 +2,7 @@
 
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { normalizeOwner } from '@/lib/finance/types'
 
 const VALID_CURRENCIES = new Set(['TWD', 'USD', 'JPY', 'CNY'])
 
@@ -20,7 +21,7 @@ export async function createAccount(formData: FormData) {
     ? getString(formData, 'currency')
     : 'TWD'
   const kind = getString(formData, 'kind') === 'liability' ? 'liability' : 'asset'
-  const balance = Math.max(0, Number(formData.get('balance') ?? 0))
+  const balance = Number(formData.get('balance') ?? 0)
 
   const { data: maxRow } = await supabase
     .from('family_accounts')
@@ -36,7 +37,7 @@ export async function createAccount(formData: FormData) {
     id,
     name,
     type: getString(formData, 'type') || '現金',
-    owner: getString(formData, 'owner') || '共同',
+    owner: normalizeOwner(getString(formData, 'owner') || 'Oscar'),
     kind,
     balance,
     currency,
@@ -60,14 +61,14 @@ export async function updateAccount(id: string, formData: FormData) {
     ? getString(formData, 'currency')
     : 'TWD'
   const kind = getString(formData, 'kind') === 'liability' ? 'liability' : 'asset'
-  const balance = Math.max(0, Number(formData.get('balance') ?? 0))
+  const balance = Number(formData.get('balance') ?? 0)
 
   const { error } = await supabase
     .from('family_accounts')
     .update({
       name,
       type: getString(formData, 'type') || '現金',
-      owner: getString(formData, 'owner') || '共同',
+      owner: normalizeOwner(getString(formData, 'owner') || 'Oscar'),
       kind,
       balance,
       currency,

@@ -27,7 +27,7 @@ type Owner = (typeof OWNERS)[number]
 type KeypadKey = (typeof KEYPAD_KEYS)[number]
 
 type Props = {
-  accounts: Pick<FamilyAccount, 'id' | 'name' | 'currency'>[]
+  accounts: Pick<FamilyAccount, 'id' | 'name' | 'currency' | 'kind' | 'balance'>[]
   categories: FamilyCategory[]
   initialPreset: TransactionFormPreset | null
 }
@@ -264,6 +264,7 @@ export function TransactionForm({ accounts, categories, initialPreset }: Props) 
   const [kind, setKind] = useState<Kind>(isKind(initialPreset?.kind) ? initialPreset.kind : 'expense')
   const [pending, setPending] = useState(false)
   const [amount, setAmount] = useState('')
+  const [isKeypadVisible, setIsKeypadVisible] = useState(false)
   const [currency, setCurrency] = useState<Currency>(isCurrency(initialPreset?.currency) ? initialPreset.currency : 'TWD')
   const [categoryId, setCategoryId] = useState(initialPreset?.categoryId ?? '')
   const [accountId, setAccountId] = useState(initialPreset?.accountId ?? '')
@@ -302,7 +303,12 @@ export function TransactionForm({ accounts, categories, initialPreset }: Props) 
 
     setPending(true)
     try {
-      await createTransaction(formData)
+      const result = await createTransaction(formData)
+      if (!result.ok) {
+        setMessage({ tone: 'error', text: result.error })
+        return
+      }
+
       setAmount('')
       setMerchant('')
       setNote('')
@@ -330,7 +336,7 @@ export function TransactionForm({ accounts, categories, initialPreset }: Props) 
     if (pending) return
 
     if (key === 'confirm') {
-      if (canSubmit) formRef.current?.requestSubmit()
+      setIsKeypadVisible(false)
       return
     }
 
@@ -351,7 +357,7 @@ export function TransactionForm({ accounts, categories, initialPreset }: Props) 
     <form
       ref={formRef}
       action={handleSubmit}
-      className="pb-[calc(24rem+7rem+env(safe-area-inset-bottom))]"
+      className={isKeypadVisible ? 'pb-[calc(24rem+7rem+env(safe-area-inset-bottom))]' : 'pb-[calc(7rem+env(safe-area-inset-bottom))]'}
     >
       <div className="sticky top-0 z-30 bg-[#faf7f0]/92 px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))] backdrop-blur">
         <div className="mx-auto flex w-full max-w-md items-center justify-between">
@@ -416,9 +422,9 @@ export function TransactionForm({ accounts, categories, initialPreset }: Props) 
 
           <button
             type="button"
-            onClick={() => setAmount('')}
+            onClick={() => setIsKeypadVisible(true)}
             className={`mt-5 block w-full text-left text-[4rem] font-black leading-none tracking-[-0.04em] ${amountAccentClass(kind)}`}
-            aria-label="清除金額"
+            aria-label="開啟數字鍵盤"
           >
             {formatAmountDisplay(amount)}
           </button>
@@ -526,7 +532,12 @@ export function TransactionForm({ accounts, categories, initialPreset }: Props) 
         </section>
       </div>
 
-      <div className="fixed inset-x-0 bottom-[calc(6.25rem+env(safe-area-inset-bottom))] z-40 px-4">
+      <div
+        className={`fixed inset-x-0 bottom-[calc(6.25rem+env(safe-area-inset-bottom))] z-40 px-4 transition-all ${
+          isKeypadVisible ? 'pointer-events-auto translate-y-0 opacity-100' : 'pointer-events-none translate-y-6 opacity-0'
+        }`}
+        aria-hidden={!isKeypadVisible}
+      >
         <div className="mx-auto flex w-full max-w-md flex-col gap-3">
           <div className="rounded-[2rem] bg-white/92 p-3 shadow-[0_24px_55px_rgba(15,23,42,0.15)] backdrop-blur">
             <div className="mb-3 flex items-center justify-between px-1">
@@ -546,7 +557,7 @@ export function TransactionForm({ accounts, categories, initialPreset }: Props) 
                       key={`${key}-${index}`}
                       type="button"
                       onClick={() => handleAmountKey(key)}
-                      disabled={pending || !canSubmit}
+                      disabled={pending}
                       className="row-span-2 rounded-[1.4rem] bg-[linear-gradient(180deg,#ffbd59_0%,#ff9d2f_100%)] px-3 py-6 text-lg font-black text-white shadow-[0_14px_28px_rgba(255,157,47,0.38)] disabled:opacity-50"
                     >
                       確定

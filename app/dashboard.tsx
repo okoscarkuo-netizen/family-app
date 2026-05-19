@@ -12,9 +12,11 @@ import {
   getAccountGroup,
   isExpenseLiabilityAccount,
   normalizeFinancialAccount,
+  normalizeOwner,
   parseAccountKind,
   type FamilyAccount,
 } from "@/lib/finance/types";
+import { dashboardStateFingerprint, normalizeDashboardState } from "@/lib/dashboard-state";
 import { initialAccounts, normalizeAccounts } from "@/lib/accounts";
 import { ChangeEvent, FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -97,9 +99,9 @@ const initialCategories: Category[] = [
 ];
 
 const initialTodos: TodoItem[] = [
-  { title: "週末採買：洗衣精、米、牛奶", owner: "共同", due: "今天", done: false },
-  { title: "確認五月信用卡明細", owner: "我", due: "明天", done: false },
-  { title: "整理冰箱與下週菜單", owner: "老婆", due: "週日", done: true },
+  { title: "週末採買：洗衣精、米、牛奶", owner: "Oscar", due: "今天", done: false },
+  { title: "確認五月信用卡明細", owner: "Oscar", due: "明天", done: false },
+  { title: "整理冰箱與下週菜單", owner: "Livia", due: "週日", done: true },
 ];
 
 const initialBills: BillReminder[] = [
@@ -115,14 +117,14 @@ const initialMaintenance: MaintenanceItem[] = [
 ];
 
 const initialEntries: RecentEntry[] = [
-  { item: "全聯採買", amount: -1280, meta: "餐飲 · 老婆 · 今天", account: "共同信用卡", occurredAt: "2026-05-12T12:00" },
-  { item: "停車月租", amount: -3200, meta: "交通 · 我 · 昨天", account: "薪轉戶", occurredAt: "2026-05-11T12:00" },
-  { item: "薪資入帳", amount: 86500, meta: "收入 · 我 · 5/5", account: "薪轉戶", occurredAt: "2026-05-05T12:00" },
-  { item: "瓦斯費", amount: -740, meta: "帳單 · 共同 · 5/3", account: "家庭現金", occurredAt: "2026-05-03T12:00" },
+  { item: "全聯採買", amount: -1280, meta: "餐飲 · Livia · 今天", account: "共同信用卡", occurredAt: "2026-05-12T12:00" },
+  { item: "停車月租", amount: -3200, meta: "交通 · Oscar · 昨天", account: "薪轉戶", occurredAt: "2026-05-11T12:00" },
+  { item: "薪資入帳", amount: 86500, meta: "收入 · Oscar · 5/5", account: "薪轉戶", occurredAt: "2026-05-05T12:00" },
+  { item: "瓦斯費", amount: -740, meta: "帳單 · Oscar · 5/3", account: "家庭現金", occurredAt: "2026-05-03T12:00" },
 ];
 
 type DashboardPage = "home" | "ledger" | "accounts" | "reminders";
-type PersonalAccountOwner = "我" | "老婆";
+type PersonalAccountOwner = "Oscar" | "Livia";
 
 const navItems: { label: string; href: string; page: DashboardPage }[] = [
   { label: "首頁", href: "/", page: "home" },
@@ -132,8 +134,8 @@ const navItems: { label: string; href: string; page: DashboardPage }[] = [
 ];
 
 const personalAccountTabs: { owner: PersonalAccountOwner; label: string }[] = [
-  { owner: "我", label: "翰融" },
-  { owner: "老婆", label: "彥伶" },
+  { owner: "Oscar", label: "Oscar" },
+  { owner: "Livia", label: "Livia" },
 ];
 
 const storageKey = "family-dashboard-state-v1";
@@ -154,10 +156,18 @@ type StoredDashboard = {
   entries: RecentEntry[];
 };
 
+type DashboardCloudState = Pick<StoredDashboard, "categories" | "todos" | "bills" | "maintenance" | "entries">;
+
 type AccountSyncState = "loading" | "synced" | "syncing" | "local" | "error";
 
 type AccountsApiResponse = {
   accounts?: unknown;
+  message?: string;
+};
+
+type DashboardStateApiResponse = {
+  state?: unknown;
+  source?: "cloud" | "missing";
   message?: string;
 };
 
@@ -462,7 +472,7 @@ function getEntryCategory(entry: RecentEntry) {
 }
 
 function getEntryOwner(entry: RecentEntry) {
-  return getEntryMetaPart(entry, 2, "共同");
+  return normalizeOwner(getEntryMetaPart(entry, 2, "Oscar"));
 }
 
 function getEntryAccountAmount(entry: RecentEntry) {
@@ -530,7 +540,7 @@ export function Dashboard({
     | "entries"
     | null
   >(null);
-  const [activeAccountOwner, setActiveAccountOwner] = useState<PersonalAccountOwner>("我");
+  const [activeAccountOwner, setActiveAccountOwner] = useState<PersonalAccountOwner>("Oscar");
   const [accountQuery, setAccountQuery] = useState("");
   const [hideZeroAccounts, setHideZeroAccounts] = useState(false);
   const [showHiddenAccounts, setShowHiddenAccounts] = useState(false);
@@ -540,9 +550,15 @@ export function Dashboard({
   const [hasLoadedLocalData, setHasLoadedLocalData] = useState(false);
   const [accountSyncState, setAccountSyncState] = useState<AccountSyncState>("loading");
   const [accountSyncMessage, setAccountSyncMessage] = useState("正在載入帳戶...");
+  const [dashboardSyncState, setDashboardSyncState] = useState<AccountSyncState>("loading");
+  const [dashboardSyncMessage, setDashboardSyncMessage] = useState("正在載入提醒與流水...");
   const [assetTrendRange, setAssetTrendRange] = useState<AssetTrendRangeKey>("5y");
+  const [accountCloudReady, setAccountCloudReady] = useState(false);
+  const [dashboardCloudReady, setDashboardCloudReady] = useState(false);
   const accountCloudReadyRef = useRef(false);
   const lastSyncedAccountsRef = useRef("");
+  const dashboardCloudReadyRef = useRef(false);
+  const lastSyncedDashboardRef = useRef("");
 
   const saveAccountsToCloud = useCallback(async (nextAccounts: FamilyAccount[], options?: { silent?: boolean }) => {
     if (!accountCloudReadyRef.current) return false;
@@ -579,6 +595,42 @@ export function Dashboard({
     }
   }, []);
 
+  const saveDashboardStateToCloud = useCallback(async (nextState: DashboardCloudState, options?: { silent?: boolean }) => {
+    if (!dashboardCloudReadyRef.current) return false;
+
+    const normalizedState = normalizeDashboardState(nextState);
+
+    if (!options?.silent) {
+      setDashboardSyncState("syncing");
+      setDashboardSyncMessage("正在同步提醒與流水...");
+    }
+
+    try {
+      const response = await fetch("/api/dashboard-state", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ state: normalizedState }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as DashboardStateApiResponse;
+
+      if (!response.ok) {
+        throw new Error(payload.message || "提醒與流水雲端同步失敗");
+      }
+
+      const savedState = normalizeDashboardState(payload.state ?? normalizedState);
+      lastSyncedDashboardRef.current = dashboardStateFingerprint(savedState);
+      setDashboardSyncState("synced");
+      setDashboardSyncMessage(
+        `提醒、帳單、保養與流水已同步到雲端 · ${savedState.todos.length + savedState.bills.length + savedState.maintenance.length + savedState.entries.length} 項`
+      );
+      return true;
+    } catch (error) {
+      setDashboardSyncState("local");
+      setDashboardSyncMessage(error instanceof Error ? `提醒與流水暫存在本機：${error.message}` : "提醒與流水暫存在本機");
+      return false;
+    }
+  }, []);
+
   const loadCloudAccounts = useCallback(
     async (fallbackAccounts: FamilyAccount[], hasLocalAccounts: boolean) => {
       try {
@@ -591,6 +643,7 @@ export function Dashboard({
 
         const cloudAccounts = normalizeAccounts(payload.accounts).map(normalizeFinancialAccount);
         accountCloudReadyRef.current = true;
+        setAccountCloudReady(true);
 
         if (cloudAccounts.length) {
           lastSyncedAccountsRef.current = accountsFingerprint(cloudAccounts);
@@ -611,6 +664,7 @@ export function Dashboard({
         setAccountSyncMessage("雲端帳戶目前是空的，新修改會自動同步");
       } catch (error) {
         accountCloudReadyRef.current = false;
+        setAccountCloudReady(false);
         lastSyncedAccountsRef.current = accountsFingerprint(fallbackAccounts);
         setAccountSyncState("local");
         setAccountSyncMessage(error instanceof Error ? `帳戶暫存在本機：${error.message}` : "帳戶暫存在本機");
@@ -619,10 +673,60 @@ export function Dashboard({
     [saveAccountsToCloud]
   );
 
+  const loadCloudDashboardState = useCallback(
+    async (fallbackState: DashboardCloudState) => {
+      try {
+        const response = await fetch("/api/dashboard-state", { cache: "no-store" });
+        const payload = (await response.json().catch(() => ({}))) as DashboardStateApiResponse;
+
+        if (!response.ok) {
+          throw new Error(payload.message || "提醒與流水雲端資料尚未設定");
+        }
+
+        dashboardCloudReadyRef.current = true;
+        setDashboardCloudReady(true);
+
+        if (!payload.state || payload.source === "missing") {
+          lastSyncedDashboardRef.current = dashboardStateFingerprint(fallbackState);
+          setDashboardSyncState("synced");
+          setDashboardSyncMessage("雲端提醒與流水目前是空的，新修改會自動同步");
+          await saveDashboardStateToCloud(fallbackState, { silent: true });
+          return;
+        }
+
+        const cloudState = normalizeDashboardState(payload.state);
+        lastSyncedDashboardRef.current = dashboardStateFingerprint(cloudState);
+        setCategories(cloudState.categories);
+        setTodos(cloudState.todos);
+        setBills(cloudState.bills);
+        setMaintenance(cloudState.maintenance);
+        setEntries(cloudState.entries);
+        setDashboardSyncState("synced");
+        setDashboardSyncMessage(
+          `已從雲端載入 ${cloudState.todos.length} 個提醒、${cloudState.bills.length} 筆帳單、${cloudState.maintenance.length} 個保養與 ${cloudState.entries.length} 筆流水`
+        );
+      } catch (error) {
+        dashboardCloudReadyRef.current = false;
+        setDashboardCloudReady(false);
+        lastSyncedDashboardRef.current = dashboardStateFingerprint(fallbackState);
+        setDashboardSyncState("local");
+        setDashboardSyncMessage(error instanceof Error ? `提醒與流水暫存在本機：${error.message}` : "提醒與流水暫存在本機");
+      }
+    },
+    [saveDashboardStateToCloud]
+  );
+
   useEffect(() => {
     const loadSavedState = window.setTimeout(() => {
       const saved = window.localStorage.getItem(storageKey);
       let fallbackAccounts = initialAccounts.map(normalizeFinancialAccount);
+      let fallbackDashboardState: DashboardCloudState = {
+        categories: initialCategories,
+        todos: initialTodos,
+        bills: initialBills,
+        maintenance: initialMaintenance,
+        entries: initialEntries,
+      };
       let hasLocalAccounts = false;
 
       if (saved) {
@@ -639,6 +743,13 @@ export function Dashboard({
           setBills(parsed.bills ?? initialBills);
           setMaintenance(parsed.maintenance ?? initialMaintenance);
           setEntries(parsed.entries ?? initialEntries);
+          fallbackDashboardState = {
+            categories: parsed.categories ?? initialCategories,
+            todos: parsed.todos ?? initialTodos,
+            bills: parsed.bills ?? initialBills,
+            maintenance: parsed.maintenance ?? initialMaintenance,
+            entries: parsed.entries ?? initialEntries,
+          };
         } catch {
           window.localStorage.removeItem(storageKey);
         }
@@ -646,10 +757,11 @@ export function Dashboard({
 
       setHasLoadedLocalData(true);
       void loadCloudAccounts(fallbackAccounts, hasLocalAccounts);
+      void loadCloudDashboardState(fallbackDashboardState);
     }, 0);
 
     return () => window.clearTimeout(loadSavedState);
-  }, [loadCloudAccounts]);
+  }, [loadCloudAccounts, loadCloudDashboardState]);
 
   useEffect(() => {
     if (!hasLoadedLocalData) return;
@@ -667,7 +779,7 @@ export function Dashboard({
   }, [accounts, bills, categories, entries, hasLoadedLocalData, maintenance, todos]);
 
   useEffect(() => {
-    if (!hasLoadedLocalData || !accountCloudReadyRef.current) return;
+    if (!hasLoadedLocalData || !accountCloudReady) return;
 
     const nextFingerprint = accountsFingerprint(accounts);
     if (nextFingerprint === lastSyncedAccountsRef.current) return;
@@ -677,7 +789,27 @@ export function Dashboard({
     }, 700);
 
     return () => window.clearTimeout(syncTimer);
-  }, [accounts, hasLoadedLocalData, saveAccountsToCloud]);
+  }, [accountCloudReady, accounts, hasLoadedLocalData, saveAccountsToCloud]);
+
+  useEffect(() => {
+    if (!hasLoadedLocalData || !dashboardCloudReady) return;
+
+    const nextState: DashboardCloudState = {
+      categories,
+      todos,
+      bills,
+      maintenance,
+      entries,
+    };
+    const nextFingerprint = dashboardStateFingerprint(nextState);
+    if (nextFingerprint === lastSyncedDashboardRef.current) return;
+
+    const syncTimer = window.setTimeout(() => {
+      void saveDashboardStateToCloud(nextState);
+    }, 700);
+
+    return () => window.clearTimeout(syncTimer);
+  }, [bills, categories, dashboardCloudReady, entries, hasLoadedLocalData, maintenance, saveDashboardStateToCloud, todos]);
 
   const totalSpent = categories.reduce((sum, item) => sum + item.amount, 0);
   const plannedBudget = 58000;
@@ -716,12 +848,10 @@ export function Dashboard({
     if (hideZeroAccounts && balanceIsZero && !account.hidden) return false;
     return !normalizedQuery || searchable.includes(normalizedQuery);
   });
-  const personalAccounts = filteredAccounts.filter((account) => account.owner === activeAccountOwner);
-  const sharedAccounts = filteredAccounts.filter((account) => account.owner === "共同");
-  const visibleAccountsCount = personalAccounts.length + sharedAccounts.length;
+  const personalAccounts = filteredAccounts.filter((account) => normalizeOwner(account.owner) === activeAccountOwner);
+  const visibleAccountsCount = personalAccounts.length;
   const activeAccountTab = personalAccountTabs.find((tab) => tab.owner === activeAccountOwner) ?? personalAccountTabs[0];
   const sortedPersonalAccountGroups = groupAccountsByType(personalAccounts);
-  const sortedSharedAccountGroups = groupAccountsByType(sharedAccounts);
   const currentSelectedAccount = accountId
     ? accounts.find((account) => account.id === accountId) ?? null
     : selectedAccount
@@ -789,7 +919,7 @@ export function Dashboard({
     const modeLabel = entryModeLabels[mode];
     const fallbackCategory = mode === "income" ? "收入" : "其他";
     const category = String(form.get("category") || fallbackCategory);
-    const owner = String(form.get("owner") || "共同");
+    const owner = normalizeOwner(String(form.get("owner") || "Oscar"));
     const occurredAt = String(form.get("time") || getLocalDatetimeInputValue());
     const time = formatEntryTime(occurredAt);
     const title = String(form.get("title") || "").trim();
@@ -846,7 +976,7 @@ export function Dashboard({
     const form = new FormData(event.currentTarget);
     const name = String(form.get("name") || "新帳戶");
     const type = String(form.get("type") || "現金");
-    const owner = String(form.get("owner") || "共同");
+    const owner = normalizeOwner(String(form.get("owner") || "Oscar"));
     const kind = parseAccountKind(form.get("kind"));
     const balance = Number(form.get("balance") || 0);
     const currency = String(form.get("currency") || "TWD");
@@ -858,7 +988,7 @@ export function Dashboard({
         type,
         owner,
         kind,
-        balance: Math.max(0, balance),
+        balance,
         currency,
         sourceApp: "manual",
       }),
@@ -882,7 +1012,7 @@ export function Dashboard({
     setAccounts((current) =>
       current.map((account) =>
         account.id === editingAccount.id
-          ? normalizeFinancialAccount({ ...account, name, type, owner, kind, balance: Math.max(0, balance), currency })
+          ? normalizeFinancialAccount({ ...account, name, type, owner, kind, balance, currency })
           : account
       )
     );
@@ -979,7 +1109,7 @@ export function Dashboard({
       .filter(Boolean)
       .filter((line) => !line.toLowerCase().startsWith("name,"))
       .map((line, index) => {
-        const [name, type = "現金", owner = "共同", kind = "asset", balance = "0", currency = "TWD"] = line
+        const [name, type = "現金", owner = "Oscar", kind = "asset", balance = "0", currency = "TWD"] = line
           .split(",")
           .map((part) => part.trim());
 
@@ -991,7 +1121,7 @@ export function Dashboard({
           type,
           owner,
           kind: parseAccountKind(kind),
-          balance: Math.max(0, Number(balance) || 0),
+          balance: Number(balance) || 0,
           currency: currency || "TWD",
           sourceApp: "andromoney",
           sourceAccountName: name,
@@ -1025,13 +1155,13 @@ export function Dashboard({
         if (account.id === fromId) {
           const nextBalance =
             account.kind === "asset" ? account.balance - amount : account.balance + amount;
-          return { ...account, balance: Math.max(0, nextBalance) };
+          return { ...account, balance: nextBalance };
         }
 
         if (account.id === toId) {
           const nextBalance =
             account.kind === "asset" ? account.balance + amount : account.balance - amount;
-          return { ...account, balance: Math.max(0, nextBalance) };
+          return { ...account, balance: nextBalance };
         }
 
         return account;
@@ -1057,7 +1187,7 @@ export function Dashboard({
     setTodos((current) => [
       {
         title: String(form.get("title") || "新的提醒"),
-        owner: String(form.get("owner") || "共同"),
+        owner: normalizeOwner(String(form.get("owner") || "Oscar")),
         due: String(form.get("due") || "未指定"),
         done: false,
       },
@@ -1195,11 +1325,19 @@ export function Dashboard({
             <p className="text-xs font-bold uppercase text-slate-500">登入狀態</p>
             <p className="mt-2 text-sm font-semibold text-slate-900">Supabase 帳號密碼登入</p>
             <p className="mt-1 break-all text-xs leading-5 text-slate-600">{userEmail}</p>
+            <p className="mt-3 text-xs font-bold text-slate-500">帳戶同步</p>
             <p className={`mt-3 rounded-md px-2 py-1 text-xs font-bold ${accountSyncBadgeClass(accountSyncState)}`}>
               {accountSyncLabel(accountSyncState)}
             </p>
             <p className="mt-2 text-xs leading-5 text-slate-600">
               {accountSyncMessage}
+            </p>
+            <p className="mt-3 text-xs font-bold text-slate-500">提醒 / 流水同步</p>
+            <p className={`mt-1 rounded-md px-2 py-1 text-xs font-bold ${accountSyncBadgeClass(dashboardSyncState)}`}>
+              {accountSyncLabel(dashboardSyncState)}
+            </p>
+            <p className="mt-2 text-xs leading-5 text-slate-600">
+              {dashboardSyncMessage}
             </p>
             <button
               className="mt-3 w-full rounded-md border-2 border-slate-950 bg-[#25f4a3] px-3 py-2 text-xs font-black text-slate-950 hover:bg-[#7dffcb]"
@@ -1220,7 +1358,7 @@ export function Dashboard({
           </form>
         </aside>
 
-        <section className="flex-1 pb-24 lg:pb-0">
+        <section className="flex-1 pb-32 lg:pb-0">
           <header
             id="overview"
             className="sticky top-0 z-10 border-b-2 border-[#ff3d9a] bg-[#faf7f0]/90 px-4 py-3 backdrop-blur lg:px-8 lg:py-5"
@@ -1439,7 +1577,7 @@ export function Dashboard({
                 </div>
 
                 <div className="mt-3 text-xs font-black text-slate-500">
-                  顯示 {visibleAccountsCount} / {accounts.length} 個帳戶 · {activeAccountTab.label}個人帳戶 + 共同帳戶
+                  顯示 {visibleAccountsCount} / {accounts.length} 個帳戶 · {activeAccountTab.label}名下帳戶
                   {hiddenAccountsCount ? ` · 已隱藏 ${hiddenAccountsCount} 個` : ""}
                 </div>
 
@@ -1453,16 +1591,6 @@ export function Dashboard({
                     onToggleHidden={toggleAccountHidden}
                     title={`${activeAccountTab.label}的帳戶`}
                   />
-
-                  <AccountSection
-                    accounts={sharedAccounts}
-                    emptyMessage="找不到符合條件的共同帳戶。"
-                    groups={sortedSharedAccountGroups}
-                    onDelete={deleteAccount}
-                    onEdit={openEditAccount}
-                    onToggleHidden={toggleAccountHidden}
-                    title="共同帳戶"
-                  />
                 </div>
                 </>
                 )}
@@ -1474,7 +1602,7 @@ export function Dashboard({
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
                     <h2 className="text-lg font-black">流水總覽</h2>
-                    <p className="mt-1 text-sm font-semibold text-slate-600">本人與老婆共用分類，所有紀錄可同步到家庭空間。</p>
+                    <p className="mt-1 text-sm font-semibold text-slate-600">Oscar 與 Livia 的家庭記錄會一起同步在這裡。</p>
                   </div>
                   <button
                     className="rounded-md border-2 border-slate-950 bg-[#ff3d9a] px-4 py-2 text-sm font-black text-white hover:bg-[#e92b87]"
@@ -1579,7 +1707,7 @@ export function Dashboard({
               <section className="rounded-lg border-2 border-slate-950 bg-[#00c2ff] p-5 text-slate-950 shadow-[8px_8px_0_#ff3d9a]">
                 <p className="text-xs font-black uppercase tracking-[0.18em] text-slate-700">Family Balance</p>
                 <h2 className="mt-3 text-3xl font-black">{formatCurrency(balance)}</h2>
-                <p className="mt-2 text-sm font-bold text-slate-800">共同現金流、信用卡與即將扣款都集中在這裡看。</p>
+                <p className="mt-2 text-sm font-bold text-slate-800">Oscar 與 Livia 的現金流、信用卡與即將扣款都集中在這裡看。</p>
                 <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
                   <div className="rounded-md border-2 border-slate-950 bg-white p-3">
                     <p className="font-bold text-slate-600">本月收入</p>
@@ -1641,49 +1769,6 @@ export function Dashboard({
           </div>
         </section>
       </div>
-
-      <nav
-        aria-label="手機主導覽"
-        className="fixed inset-x-0 bottom-0 z-20 grid grid-cols-5 items-center gap-1 border-t-2 border-slate-950 bg-white/95 px-2 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 shadow-[0_-10px_0_#00c2ff] backdrop-blur lg:hidden"
-      >
-        {navItems.slice(0, 2).map((item) => {
-          const isActive = item.page === activePage;
-
-          return (
-            <Link
-              className={`rounded-md px-2 py-2.5 text-center text-xs font-black ${
-                isActive ? "bg-[#ff3d9a] text-white" : "text-slate-700 hover:bg-[#fff45f]"
-              }`}
-              href={item.href}
-              key={item.label}
-            >
-              {item.label}
-            </Link>
-          );
-        })}
-        <button
-          className="rounded-md border-2 border-slate-950 bg-[#fff45f] px-2 py-2 text-center text-xs font-black text-slate-950 shadow-[2px_2px_0_#ff3d9a]"
-          onClick={() => setModal("entry")}
-          type="button"
-        >
-          記一筆
-        </button>
-        {navItems.slice(2).map((item) => {
-          const isActive = item.page === activePage;
-
-          return (
-            <Link
-              className={`rounded-md px-2 py-2.5 text-center text-xs font-black ${
-                isActive ? "bg-[#ff3d9a] text-white" : "text-slate-700 hover:bg-[#fff45f]"
-              }`}
-              href={item.href}
-              key={item.label}
-            >
-              {item.label}
-            </Link>
-          );
-        })}
-      </nav>
 
       {modal === "entry" && (
         <EntryComposer
@@ -2274,7 +2359,7 @@ function EntryComposer({
     currency: defaultEntryCurrency(accounts[0]),
     accountId: accounts[0]?.id ?? "",
     category: categories[0]?.name ?? "其他",
-    owner: "共同",
+    owner: "Oscar",
     time: getLocalDatetimeInputValue(),
     note: "",
   }));
@@ -2418,10 +2503,10 @@ function EntryComposer({
               <span>{activeModeLabel}</span>
               <span>{amountValue > 0 ? amountPreview : formatCurrencyValue(0, selectedCurrency)}</span>
             </div>
-            <div className="mt-3 flex items-end gap-3">
+            <div className="mt-3 flex items-center gap-2">
               <div
                 aria-label="幣別"
-                className="mb-3 inline-flex shrink-0 overflow-hidden rounded-md border-2 border-slate-950 bg-white shadow-[3px_3px_0_#ff3d9a]"
+                className="inline-flex shrink-0 self-start overflow-hidden rounded-md border-2 border-slate-950 bg-white shadow-[3px_3px_0_#ff3d9a]"
                 role="group"
               >
                 <input name="currency" type="hidden" value={selectedCurrency} />
@@ -2430,7 +2515,7 @@ function EntryComposer({
                   return (
                     <button
                       aria-pressed={isActive}
-                      className={`min-h-10 px-3 text-sm font-black transition ${
+                      className={`min-h-8 px-2.5 text-xs font-black transition sm:min-h-9 sm:px-3 ${
                         isActive
                           ? "bg-[#25f4a3] text-slate-950 shadow-[inset_0_0_0_2px_#0f172a]"
                           : "bg-white text-slate-500 hover:bg-[#fff7ad]"
@@ -2448,7 +2533,7 @@ function EntryComposer({
                 <span className="sr-only">金額</span>
                 <input
                   aria-label="金額"
-                  className="w-full bg-transparent text-right text-6xl font-black tracking-normal text-slate-950 placeholder:text-slate-300 focus:outline-none sm:text-7xl"
+                  className="min-h-24 w-full bg-transparent text-right text-7xl font-black tracking-tight text-slate-950 placeholder:text-slate-300 focus:outline-none sm:min-h-28 sm:text-8xl"
                   inputMode="decimal"
                   onChange={(event) => updateField("amount", event.target.value)}
                   pattern="[0-9]*[.]?[0-9]*"
@@ -2501,9 +2586,8 @@ function EntryComposer({
             </label>
 
             <SelectInput label="成員" name="owner" value={formState.owner} onChange={(value) => updateField("owner", value)}>
-              <option>共同</option>
-              <option>我</option>
-              <option>老婆</option>
+              <option>Oscar</option>
+              <option>Livia</option>
             </SelectInput>
 
             <label className="block">
@@ -2604,9 +2688,8 @@ function EntryEditForm({
       </SelectInput>
       <TextInput defaultValue={initialTime} label="時間" name="time" type="datetime-local" />
       <SelectInput defaultValue={initialOwner} label="成員" name="owner">
-        <option>共同</option>
-        <option>我</option>
-        <option>老婆</option>
+        <option>Oscar</option>
+        <option>Livia</option>
       </SelectInput>
       <SubmitButton>儲存紀錄</SubmitButton>
     </form>
@@ -2628,7 +2711,7 @@ function AccountForm({
         defaultValue={account?.name}
         label="帳戶名稱"
         name="name"
-        placeholder="例如：玉山信用卡、老婆薪轉戶"
+        placeholder="例如：玉山信用卡、Oscar 薪轉戶"
       />
       <SelectInput defaultValue={account?.type} label="帳戶類型" name="type">
         {accountTypes.map((type) => (
@@ -2665,7 +2748,7 @@ function AccountImportForm({ onSubmit }: { onSubmit: (event: FormEvent<HTMLFormE
         <textarea
           className="min-h-44 w-full rounded-md border-2 border-slate-950 bg-white px-3 py-2 font-mono text-sm font-bold text-slate-950 focus:outline-none focus:ring-4 focus:ring-[#00c2ff]"
           name="accounts"
-          placeholder={"name,type,owner,kind,balance,currency\n玉山銀行,儲蓄卡,我,asset,52000,TWD\n共同信用卡,信用卡,共同,liability,18600,TWD\nUS現金,現金,共同,asset,1689.04,USD"}
+          placeholder={"name,type,owner,kind,balance,currency\n玉山銀行,儲蓄卡,Oscar,asset,52000,TWD\n玉山信用卡,信用卡,Livia,liability,18600,TWD\nUS現金,現金,Oscar,asset,1689.04,USD"}
           required
         />
       </label>
@@ -2717,9 +2800,8 @@ function TodoForm({ onSubmit }: { onSubmit: (event: FormEvent<HTMLFormElement>) 
       <TextInput label="提醒內容" name="title" placeholder="例如：確認信用卡明細" />
       <TextInput label="提醒時間" name="due" placeholder="今天、明天、5/15" />
       <SelectInput label="負責人" name="owner">
-        <option>共同</option>
-        <option>我</option>
-        <option>老婆</option>
+        <option>Oscar</option>
+        <option>Livia</option>
       </SelectInput>
       <SubmitButton>加入提醒</SubmitButton>
     </form>
