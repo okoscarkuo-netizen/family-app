@@ -10,6 +10,11 @@ function getString(formData: FormData, key: string, fallback = ''): string {
   return String(formData.get(key) ?? fallback).trim()
 }
 
+function getBoolean(formData: FormData, key: string) {
+  const value = formData.get(key)
+  return value === 'true' || value === 'on'
+}
+
 export async function createAccount(formData: FormData) {
   const supabase = createAdminClient()
   if (!supabase) throw new Error('資料庫連線失敗')
@@ -41,6 +46,7 @@ export async function createAccount(formData: FormData) {
     kind,
     balance,
     currency,
+    shared: getBoolean(formData, 'shared'),
     hidden: formData.get('hidden') === 'true',
     sort_order: sortOrder,
     is_archived: false,
@@ -69,6 +75,7 @@ export async function updateAccount(id: string, formData: FormData) {
       name,
       type: getString(formData, 'type') || '現金',
       owner: normalizeOwner(getString(formData, 'owner') || 'Oscar'),
+      shared: getBoolean(formData, 'shared'),
       kind,
       balance,
       currency,

@@ -1,5 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
-import { getAllCategories, getLatestTransactionPreset } from '@/lib/family-transactions'
+import { getAllCategories, getLatestTransactionPreset, getRecentMerchants } from '@/lib/family-transactions'
 import { TransactionForm } from '@/app/ledger/_components/TransactionForm'
 import { BottomNav } from '@/components/BottomNav'
 import { shellBackgroundClass } from '@/components/PageShell'
@@ -17,9 +17,10 @@ async function getActiveAccounts(): Promise<Pick<FamilyAccount, 'id' | 'name' | 
 }
 
 export default async function NewTransactionPage() {
-  const [accounts, categories, latestPreset] = await Promise.all([
+  const [accounts, categories, merchants, latestPreset] = await Promise.all([
     getActiveAccounts(),
     getAllCategories(),
+    getRecentMerchants(),
     getLatestTransactionPreset(),
   ])
 
@@ -30,6 +31,7 @@ export default async function NewTransactionPage() {
           <TransactionForm
             accounts={accounts}
             categories={categories}
+            merchants={merchants}
             initialPreset={latestPreset}
           />
         </section>

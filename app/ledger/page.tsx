@@ -5,6 +5,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { TransactionList } from '@/app/ledger/_components/TransactionList'
 import { TransactionFilters } from '@/app/ledger/_components/TransactionFilters'
 import { BottomNav } from '@/components/BottomNav'
+import { PageShell, primaryButtonClass } from '@/components/PageShell'
 import type { FamilyAccount } from '@/lib/finance/types'
 
 async function getActiveAccounts(): Promise<Pick<FamilyAccount, 'id' | 'name'>[]> {
@@ -35,31 +36,26 @@ export default async function LedgerPage({ searchParams }: PageProps) {
   ])
 
   return (
-    <main className="min-h-screen bg-[#faf7f0] pb-20">
-      <div className="mx-auto max-w-lg px-4 py-6">
-        <div className="mb-5 flex items-center justify-between">
-          <h1 className="text-lg font-black text-slate-950">帳本</h1>
-          <Link
-            href="/ledger/new"
-            className="rounded-md border-2 border-slate-950 bg-[#ff3d9a] px-4 py-2 text-sm font-black text-white shadow-[3px_3px_0_#111827] hover:bg-[#e92b87]"
-          >
-            ＋ 新增
-          </Link>
-        </div>
-
-        <div className="mb-4">
-          <Suspense>
-            <TransactionFilters
-              accounts={accounts}
-              currentYear={year}
-              currentMonth={month}
-            />
-          </Suspense>
-        </div>
-
-        <TransactionList transactions={transactions} />
-      </div>
+    <PageShell
+      title="流水"
+      eyebrow="收支紀錄"
+      description="依月份、帳戶篩選，查看家庭流水的每一筆變動。"
+      action={
+        <Link href="/ledger/new" className={primaryButtonClass}>
+          ＋ 新增
+        </Link>
+      }
+      contentClassName="space-y-4"
+    >
+      <Suspense>
+        <TransactionFilters
+          accounts={accounts}
+          currentYear={year}
+          currentMonth={month}
+        />
+      </Suspense>
+      <TransactionList transactions={transactions} />
       <BottomNav />
-    </main>
+    </PageShell>
   )
 }

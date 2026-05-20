@@ -40,7 +40,7 @@ export function MonthlySummaryCard({ transactions, month }: Props) {
         </div>
         <div className="mt-1 flex items-center justify-between">
           <p className="text-[10px] text-slate-500">結餘 ${fmt(balance)}</p>
-          <p className="text-[10px] text-slate-700 opacity-70">→ 查看帳本</p>
+          <p className="text-[10px] text-slate-700 opacity-70">→ 查看流水</p>
         </div>
       </div>
     </Link>

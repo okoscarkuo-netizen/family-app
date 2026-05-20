@@ -81,6 +81,7 @@ create table if not exists public.family_accounts (
   name text not null,
   type text not null,
   owner text not null,
+  shared boolean not null default false,
   kind text not null check (kind in ('asset', 'liability')),
   balance numeric(14, 2) not null default 0,
   currency text not null default 'TWD',

@@ -178,6 +178,7 @@ function accountsFingerprint(accounts: FamilyAccount[]) {
       name: account.name,
       type: account.type,
       owner: account.owner,
+      shared: account.shared ?? false,
       kind: account.kind,
       balance: account.balance,
       currency: account.currency,
@@ -496,7 +497,7 @@ function isLegacyDemoAccounts(accounts: FamilyAccount[]) {
 }
 
 function accountSyncLabel(state: AccountSyncState) {
-  if (state === "synced") return "雲端已同步";
+  if (state === "synced") return "";
   if (state === "syncing") return "同步中";
   if (state === "error") return "同步錯誤";
   if (state === "local") return "本機保存";
@@ -559,6 +560,8 @@ export function Dashboard({
   const lastSyncedAccountsRef = useRef("");
   const dashboardCloudReadyRef = useRef(false);
   const lastSyncedDashboardRef = useRef("");
+  const accountSwitcherSentinelRef = useRef<HTMLDivElement | null>(null);
+  const [showAccountSwitcher, setShowAccountSwitcher] = useState(false);
 
   const saveAccountsToCloud = useCallback(async (nextAccounts: FamilyAccount[], options?: { silent?: boolean }) => {
     if (!accountCloudReadyRef.current) return false;
@@ -1260,6 +1263,26 @@ export function Dashboard({
   const showSecondaryColumn = isLedgerPage || isRemindersPage;
   const showMainContent = showAccounts || showLedger || showReminders || showSecondaryColumn;
 
+  useEffect(() => {
+    const sentinel = accountSwitcherSentinelRef.current;
+    if (!sentinel) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        setShowAccountSwitcher(entry.isIntersecting);
+      },
+      {
+        root: null,
+        threshold: 0,
+        rootMargin: "-12% 0px -72% 0px",
+      }
+    );
+
+    observer.observe(sentinel);
+
+    return () => observer.disconnect();
+  }, [showAccounts]);
+
   return (
     <main className="min-h-screen bg-[#faf7f0] text-slate-950">
       <div className="mx-auto flex min-h-screen w-full max-w-7xl flex-col lg:grid lg:grid-cols-[260px_1fr]">
@@ -1326,9 +1349,11 @@ export function Dashboard({
             <p className="mt-2 text-sm font-semibold text-slate-900">Supabase 帳號密碼登入</p>
             <p className="mt-1 break-all text-xs leading-5 text-slate-600">{userEmail}</p>
             <p className="mt-3 text-xs font-bold text-slate-500">帳戶同步</p>
-            <p className={`mt-3 rounded-md px-2 py-1 text-xs font-bold ${accountSyncBadgeClass(accountSyncState)}`}>
-              {accountSyncLabel(accountSyncState)}
-            </p>
+            {accountSyncLabel(accountSyncState) ? (
+              <p className={`mt-3 rounded-md px-2 py-1 text-xs font-bold ${accountSyncBadgeClass(accountSyncState)}`}>
+                {accountSyncLabel(accountSyncState)}
+              </p>
+            ) : null}
             <p className="mt-2 text-xs leading-5 text-slate-600">
               {accountSyncMessage}
             </p>
@@ -1519,33 +1544,45 @@ export function Dashboard({
                   </div>
                 </div>
 
-                <div className="mt-5 grid grid-cols-2 gap-2 rounded-lg border-2 border-slate-950 bg-[#e9fbff] p-1.5">
-                  {personalAccountTabs.map((tab) => {
-                    const isActive = tab.owner === activeAccountOwner;
-                    const tabAccounts = accounts.filter((account) => account.owner === tab.owner && !account.hidden);
+                <div
+                  className={`fixed inset-x-4 top-[4.75rem] z-30 border-b-2 border-slate-950 bg-[#faf7f0]/95 py-2 backdrop-blur transition-all duration-300 lg:inset-x-8 lg:top-[5.75rem] ${
+                    showAccountSwitcher ? 'translate-y-0 opacity-100 shadow-[0_12px_0_#ff3d9a]' : 'pointer-events-none -translate-y-3 opacity-0'
+                  }`}
+                >
+                  <div className="grid grid-cols-2 gap-2">
+                    {personalAccountTabs.map((tab) => {
+                      const isActive = tab.owner === activeAccountOwner;
+                      const tabAccounts = accounts.filter((account) => account.owner === tab.owner && !account.hidden);
 
-                    return (
-                      <button
-                        aria-pressed={isActive}
-                        className={`min-h-14 rounded-md border-2 px-3 py-2 text-left transition ${
-                          isActive
-                            ? "border-slate-950 bg-[#ff3d9a] text-white shadow-[3px_3px_0_#111827]"
-                            : "border-transparent bg-white text-slate-950 hover:border-slate-950 hover:bg-[#fff7ad]"
-                        }`}
-                        key={tab.owner}
-                        onClick={() => setActiveAccountOwner(tab.owner)}
-                        type="button"
-                      >
-                        <span className="block text-base font-black">{tab.label}</span>
-                        <span className={`mt-0.5 block text-xs font-bold ${isActive ? "text-white/85" : "text-slate-500"}`}>
-                          {tabAccounts.length} 個個人帳戶
-                        </span>
-                      </button>
-                    );
-                  })}
+                      return (
+                        <button
+                          aria-pressed={isActive}
+                          className={`min-h-12 border-b-4 px-3 py-2 text-left transition ${
+                            isActive
+                              ? "border-[#ff3d9a] bg-[#ff3d9a] text-white shadow-[4px_4px_0_#111827]"
+                              : "border-transparent bg-white text-slate-950 hover:border-slate-950 hover:bg-[#fff7ad]"
+                          }`}
+                          key={tab.owner}
+                          onClick={() => setActiveAccountOwner(tab.owner)}
+                          type="button"
+                        >
+                          <span className="block text-base font-black">{tab.label}</span>
+                          <span className={`mt-0.5 block text-xs font-bold ${isActive ? "text-white/85" : "text-slate-500"}`}>
+                            {tabAccounts.length} 個個人帳戶
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
-                <div className="mt-5 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_auto]">
+                {showAccountSwitcher ? (
+                  <div className="h-[4.75rem] lg:h-[5.75rem]" aria-hidden="true" />
+                ) : null}
+
+                <div ref={accountSwitcherSentinelRef} className="h-px" aria-hidden="true" />
+
+                <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_auto_auto]">
                   <label className="block">
                     <span className="sr-only">搜尋帳戶</span>
                     <input

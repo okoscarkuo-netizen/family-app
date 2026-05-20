@@ -1,5 +1,5 @@
 import { initialAccounts as andromoneyInitialAccounts } from "@/lib/family-data";
-import { normalizeOwner, type AccountKind, type FamilyAccount } from "@/lib/finance/types";
+import { isSharedAccountLabel, normalizeOwner, type AccountKind, type FamilyAccount } from "@/lib/finance/types";
 
 export type { AccountKind, FamilyAccount };
 
@@ -8,6 +8,7 @@ export type AccountRow = {
   name: string;
   type: string;
   owner: string;
+  shared?: boolean | null;
   kind: AccountKind;
   balance: number | string;
   currency: string;
@@ -42,6 +43,7 @@ export function normalizeAccount(account: Partial<FamilyAccount>, index = 0): Fa
     name,
     type: cleanText(account.type, "現金", 40),
     owner: normalizeOwner(cleanText(account.owner, "Oscar", 40)),
+    shared: Boolean(account.shared) || isSharedAccountLabel(account.owner) || isSharedAccountLabel(account.name),
     kind,
     balance: cleanBalance(account.balance),
     currency,
@@ -63,6 +65,7 @@ export function accountFromRow(row: AccountRow): FamilyAccount {
     name: row.name,
     type: row.type,
     owner: row.owner,
+    shared: row.shared ?? false,
     kind: row.kind,
     balance: Number(row.balance),
     currency: row.currency,

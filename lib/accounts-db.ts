@@ -9,7 +9,7 @@ export async function getAccounts(): Promise<FamilyAccount[]> {
 
   const { data, error } = await supabase
     .from('family_accounts')
-    .select('id, name, type, owner, kind, balance, currency, hidden, sort_order')
+    .select('*')
     .eq('is_archived', false)
     .order('sort_order', { ascending: true })
     .order('created_at', { ascending: true })
@@ -35,7 +35,7 @@ export async function getAccountById(id: string): Promise<FamilyAccount | null> 
 
   const { data, error } = await supabase
     .from('family_accounts')
-    .select('id, name, type, owner, kind, balance, currency, hidden, sort_order')
+    .select('*')
     .eq('id', id)
     .eq('is_archived', false)
     .single()

@@ -3,17 +3,15 @@
 import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import type { FamilyAccount } from '@/lib/finance/types'
-import { accountTypes, accountOwners, accountCurrencies } from '@/lib/finance/types'
+import { accountTypes, accountOwners, accountCurrencies, normalizeOwner } from '@/lib/finance/types'
 import { createAccount, updateAccount, archiveAccount } from '@/app/actions/accounts'
+import { inputClass, primaryButtonClass, secondaryButtonClass, subtleButtonClass } from '@/components/PageShell'
 
 type Props = {
   mode: 'create' | 'edit'
   account?: FamilyAccount
   onClose: () => void
 }
-
-const INPUT_CLASS =
-  'mt-1 w-full rounded-md border-2 border-slate-950 px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-4 focus:ring-[#00c2ff]'
 
 export function AccountModal({ mode, account, onClose }: Props) {
   const router = useRouter()
@@ -51,14 +49,14 @@ export function AccountModal({ mode, account, onClose }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-md rounded-lg border-2 border-slate-950 bg-white p-6 shadow-[8px_8px_0_#00c2ff]">
-        <h2 className="text-lg font-black">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
+      <div className="w-full max-w-md rounded-[2rem] border border-[#ece4d8] bg-white p-4 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
+        <h2 className="text-lg font-black text-slate-950">
           {mode === 'create' ? '新增帳戶' : '編輯帳戶'}
         </h2>
 
         {error && (
-          <p className="mt-2 rounded-md bg-red-50 px-3 py-2 text-sm font-semibold text-red-700">
+          <p className="mt-2 rounded-md border-2 border-slate-950 bg-[#fff45f] px-3 py-2 text-sm font-bold text-slate-950">
             {error}
           </p>
         )}
@@ -70,13 +68,13 @@ export function AccountModal({ mode, account, onClose }: Props) {
               name="name"
               defaultValue={account?.name ?? ''}
               required
-              className={INPUT_CLASS}
+              className={`mt-1 ${inputClass}`}
             />
           </label>
 
           <label className="block">
             <span className="text-xs font-black text-slate-600">類型</span>
-            <select name="type" defaultValue={account?.type ?? '現金'} className={INPUT_CLASS}>
+            <select name="type" defaultValue={account?.type ?? '現金'} className={`mt-1 ${inputClass}`}>
               {accountTypes.map(t => (
                 <option key={t} value={t}>{t}</option>
               ))}
@@ -85,12 +83,26 @@ export function AccountModal({ mode, account, onClose }: Props) {
 
           <label className="block">
             <span className="text-xs font-black text-slate-600">歸屬</span>
-            <select name="owner" defaultValue={account?.owner ?? '共同'} className={INPUT_CLASS}>
+            <select name="owner" defaultValue={normalizeOwner(account?.owner ?? 'Oscar')} className={`mt-1 ${inputClass}`}>
               {accountOwners.map(o => (
                 <option key={o} value={o}>{o}</option>
               ))}
             </select>
           </label>
+
+          <label className="flex items-center gap-2 rounded-md border-2 border-slate-950 bg-[#f7fbff] px-3 py-2 text-sm font-semibold">
+            <input
+              type="checkbox"
+              name="shared"
+              value="true"
+              defaultChecked={account?.shared ?? false}
+              className="size-4"
+            />
+            共用帳戶
+          </label>
+          <p className="-mt-1 text-xs font-bold text-slate-500">
+            勾選後 Oscar / Livia 兩邊都會看到這個帳戶
+          </p>
 
           <fieldset>
             <legend className="text-xs font-black text-slate-600">性質</legend>
@@ -111,7 +123,7 @@ export function AccountModal({ mode, account, onClose }: Props) {
 
           <label className="block">
             <span className="text-xs font-black text-slate-600">幣別</span>
-            <select name="currency" defaultValue={account?.currency ?? 'TWD'} className={INPUT_CLASS}>
+            <select name="currency" defaultValue={account?.currency ?? 'TWD'} className={`mt-1 ${inputClass}`}>
               {accountCurrencies.map(c => (
                 <option key={c} value={c}>{c}</option>
               ))}
@@ -126,7 +138,7 @@ export function AccountModal({ mode, account, onClose }: Props) {
               min="0"
               step="0.01"
               defaultValue={account?.balance ?? 0}
-              className={INPUT_CLASS}
+              className={`mt-1 ${inputClass}`}
             />
           </label>
 
@@ -147,7 +159,7 @@ export function AccountModal({ mode, account, onClose }: Props) {
                 type="button"
                 onClick={handleArchive}
                 disabled={isPending}
-                className="rounded-md border-2 border-slate-950 bg-red-50 px-3 py-2 text-sm font-black text-red-700 hover:bg-red-100 disabled:opacity-50"
+                className={`${subtleButtonClass} bg-[#fff45f] text-slate-950 disabled:opacity-50`}
               >
                 封存帳戶
               </button>
@@ -156,14 +168,14 @@ export function AccountModal({ mode, account, onClose }: Props) {
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-md border-2 border-slate-950 bg-white px-3 py-2 text-sm font-black hover:bg-[#e9fbff]"
+                className={secondaryButtonClass}
               >
                 取消
               </button>
               <button
                 type="submit"
                 disabled={isPending}
-                className="rounded-md border-2 border-slate-950 bg-[#00c2ff] px-4 py-2 text-sm font-black hover:bg-[#69dbff] disabled:opacity-50"
+                className={`${primaryButtonClass} disabled:opacity-50`}
               >
                 {isPending ? '儲存中…' : '儲存'}
               </button>

@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     default: "家庭中控",
     template: "%s | 家庭中控",
   },
-  description: "本人與老婆共用的家庭個人管理、記帳、待辦、帳單提醒與保養提醒 PWA。",
+  description: "Oscar 與 Livia 的家庭個人管理、記帳、待辦、帳單提醒與保養提醒 PWA。",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",

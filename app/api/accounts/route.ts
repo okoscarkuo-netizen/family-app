@@ -69,7 +69,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("family_accounts")
-    .select("id, name, type, owner, kind, balance, currency, hidden, sort_order")
+    .select("*")
     .eq("is_archived", false)
     .order("sort_order", { ascending: true })
     .order("created_at", { ascending: true });

@@ -17,6 +17,10 @@ function nullableStr(val: FormDataEntryValue | null): string | null {
   return s === '' ? null : s
 }
 
+function normalizeMerchantName(value: string) {
+  return value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('zh-TW')
+}
+
 function normalizeOccurredAt(val: FormDataEntryValue | null): string {
   const raw = str(val)
   if (!raw) return new Date().toISOString()
@@ -43,6 +47,39 @@ function normalizeCreateTransactionError(message: string) {
   return message
 }
 
+async function upsertMerchant(
+  supabase: NonNullable<ReturnType<typeof createAdminClient>>,
+  merchant: string,
+  lastUsedAt: string,
+) {
+  const normalizedName = normalizeMerchantName(merchant)
+  if (!normalizedName) return { ok: true as const, merchantId: null, supported: true as const }
+
+  const { data, error } = await supabase
+    .from('family_merchants')
+    .upsert(
+      {
+        name: merchant.trim(),
+        normalized_name: normalizedName,
+        last_used_at: lastUsedAt,
+        is_archived: false,
+      },
+      { onConflict: 'normalized_name' },
+    )
+    .select('id')
+    .single()
+
+  if (error) {
+    if (error.message.includes('family_merchants')) {
+      return { ok: true as const, merchantId: null, supported: false as const }
+    }
+
+    return { ok: false as const, error: normalizeCreateTransactionError(error.message) }
+  }
+
+  return { ok: true as const, merchantId: data.id as string, supported: true as const }
+}
+
 export async function createTransaction(formData: FormData): Promise<CreateTransactionResult> {
   const supabase = createAdminClient()
   if (!supabase) return fail('資料庫連線目前不可用，請稍後再試。')
@@ -60,6 +97,7 @@ export async function createTransaction(formData: FormData): Promise<CreateTrans
   const merchant = nullableStr(formData.get('merchant'))
   const categoryName = str(formData.get('category_name'))
   const title = merchant || categoryName || kind
+  const occurredAt = normalizeOccurredAt(formData.get('occurred_at'))
 
   const owner = normalizeOwner(str(formData.get('owner')) || 'Oscar')
   if (!['Oscar', 'Livia'].includes(owner)) {
@@ -91,8 +129,13 @@ export async function createTransaction(formData: FormData): Promise<CreateTrans
   const missingAccount = accountIds.find(id => !foundAccountIds.has(id))
   if (missingAccount) return fail(`找不到帳戶：${missingAccount}`)
 
+  const merchantResult = merchant
+    ? await upsertMerchant(supabase, merchant, occurredAt)
+    : { ok: true as const, merchantId: null, supported: true as const }
+  if (!merchantResult.ok) return fail(merchantResult.error)
+
   const payload = {
-    occurred_at: normalizeOccurredAt(formData.get('occurred_at')),
+    occurred_at: occurredAt,
     kind,
     title,
     amount: parseFloat(amountRaw.toFixed(2)),
@@ -102,8 +145,9 @@ export async function createTransaction(formData: FormData): Promise<CreateTrans
     to_account_id: toAccountId,
     owner,
     merchant,
-    occurred_on: normalizeOccurredAt(formData.get('occurred_at')).slice(0, 10),
+    occurred_on: occurredAt.slice(0, 10),
     note: nullableStr(formData.get('note')),
+    ...(merchantResult.supported ? { merchant_id: merchantResult.merchantId } : {}),
   }
 
   const { error } = await supabase.from('family_transactions').insert(payload)

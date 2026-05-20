@@ -20,14 +20,43 @@
 }
 
 body {
-  background: var(--background);
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at top left, rgba(255, 61, 154, 0.08), transparent 28%),
+    radial-gradient(circle at top right, rgba(0, 194, 255, 0.08), transparent 24%),
+    radial-gradient(circle at bottom left, rgba(255, 244, 95, 0.08), transparent 26%),
+    linear-gradient(180deg, #fbf8f2 0%, var(--background) 100%);
   color: var(--foreground);
   font-family: var(--font-geist-sans), "Noto Sans TC", sans-serif;
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(15, 23, 42, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.025) 1px, transparent 1px);
+  background-size: 36px 36px;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.45), transparent 75%);
+  opacity: 0.6;
 }
 
 button,
 a {
   -webkit-tap-highlight-color: transparent;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 ::selection {
