@@ -39,3 +39,15 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# tooling caches & artifacts
+.playwright-cli/
+.superpowers/
+supabase/.temp/
+output/
+archive/
+
+# personal data (do not commit — repo is public)
+imports/andromoney/raw/
+imports/andromoney/generated/
+imports/andromoney/screenshots/
