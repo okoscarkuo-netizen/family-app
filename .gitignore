@@ -46,6 +46,9 @@ next-env.d.ts
 supabase/.temp/
 output/
 archive/
+test-results/
+playwright-report/
+.playwright/
 
 # personal data (do not commit — repo is public)
 imports/andromoney/raw/
