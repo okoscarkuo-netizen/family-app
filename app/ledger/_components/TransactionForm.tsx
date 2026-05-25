@@ -1,52 +1,102 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { createTransaction } from '@/app/actions/transactions'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
+import type { KeyboardEvent, PointerEvent } from 'react'
+import { useRouter } from 'next/navigation'
+import { archiveCategory, createCategory, renameCategory } from '@/app/actions/categories'
+import {
+  archiveMerchantGroup,
+  createMerchantGroup,
+  createMerchant,
+  renameMerchantGroup,
+  updateMerchantGroup,
+  updateMerchant,
+} from '@/app/actions/merchant-groups'
+import { createMaintenanceReminder } from '@/app/actions/reminders'
+import { createTransaction, deleteTransaction, updateTransaction } from '@/app/actions/transactions'
 import {
   buildCategoryPickerGroups,
-  getCategoryPath,
+  buildMerchantPickerGroups,
+  UNASSIGNED_MERCHANT_GROUP_ID,
   type CategoryPickerGroup,
   type FamilyCategory,
   type FamilyMerchant,
+  type FamilyMerchantGroup,
+  type FamilyTransaction,
+  type TransactionKind,
   type TransactionFormPreset,
 } from '@/lib/family-transactions'
+import {
+  convertBetweenCurrencies,
+  getRateSnapshotForDate,
+  type TwdRateTable,
+} from '@/lib/exchange-rates'
+import { normalizeOwner } from '@/lib/finance/types'
 import type { FamilyAccount } from '@/lib/finance/types'
 
-type Kind = 'expense' | 'income' | 'transfer'
+type Kind = 'expense' | 'income' | 'transfer' | 'reminder'
 
-const KINDS: Kind[] = ['expense', 'income', 'transfer']
+const KINDS: Kind[] = ['expense', 'income', 'transfer', 'reminder']
 
 const KIND_LABELS: Record<Kind, string> = {
   expense: '支出',
   income: '收入',
   transfer: '轉帳',
+  reminder: '提辦',
 }
 
-const CURRENCIES = ['TWD', 'USD', 'JPY', 'CNY'] as const
+const CURRENCIES = ['TWD', 'USD', 'JPY'] as const
 const OWNERS = ['Oscar', 'Livia'] as const
+const REMINDER_FREQUENCIES = ['once', 'weekly', 'monthly', 'quarterly', 'yearly'] as const
+const REMINDER_FREQUENCY_LABELS: Record<(typeof REMINDER_FREQUENCIES)[number], string> = {
+  once: '一次',
+  weekly: '每週',
+  monthly: '每月',
+  quarterly: '每三個月',
+  yearly: '每年',
+}
 const KEYPAD_KEYS = [
   '7', '8', '9', 'backspace',
   '4', '5', '6', 'clear',
   '1', '2', '3', 'confirm',
-  '.', '0', '00', 'confirm',
+  '.', '0', '+', 'confirm',
 ] as const
-const WHEEL_ITEM_HEIGHT = 58
+const FORM_PADDING_WITH_KEYPAD = 'pb-[calc(40rem+env(safe-area-inset-bottom))]'
+const FORM_PADDING_WITHOUT_KEYPAD = 'pb-[calc(12rem+env(safe-area-inset-bottom))]'
+const WHEEL_ITEM_HEIGHT = 52
 const WHEEL_VISIBLE_ROWS = 5
+const KEYPAD_FOOTER_BOTTOM_OFFSET = 'calc(8rem + 2 * env(safe-area-inset-bottom))'
+const ACTION_FOOTER_BOTTOM_OFFSET = 'calc(6.75rem + env(safe-area-inset-bottom))'
 
 type Currency = (typeof CURRENCIES)[number]
 type Owner = (typeof OWNERS)[number]
+type ReminderFrequency = (typeof REMINDER_FREQUENCIES)[number]
 type KeypadKey = (typeof KEYPAD_KEYS)[number]
 type PickerOption = {
   id: string
   label: string
-  hint?: string
+}
+
+type SelectOption = {
+  value: string
+  label: string
+}
+
+type SelectOptionGroup = {
+  label: string
+  options: SelectOption[]
 }
 
 type Props = {
-  accounts: Pick<FamilyAccount, 'id' | 'name' | 'currency' | 'kind' | 'balance'>[]
+  accounts: Pick<FamilyAccount, 'id' | 'name' | 'currency' | 'kind' | 'balance' | 'owner' | 'shared' | 'type'>[]
   categories: FamilyCategory[]
   merchants: FamilyMerchant[]
+  merchantGroups: FamilyMerchantGroup[]
   initialPreset: TransactionFormPreset | null
+  rateTable?: TwdRateTable | null
+  mode?: 'create' | 'edit'
+  transaction?: FamilyTransaction | null
 }
 
 function currentLocalDateTimeValue() {
@@ -55,8 +105,27 @@ function currentLocalDateTimeValue() {
   return new Date(now.getTime() - offset * 60_000).toISOString().slice(0, 16)
 }
 
-function isKind(value: string | null | undefined): value is Kind {
-  return value === 'expense' || value === 'income' || value === 'transfer'
+function currentLocalDateValue() {
+  const now = new Date()
+  const offset = now.getTimezoneOffset()
+  return new Date(now.getTime() - offset * 60_000).toISOString().slice(0, 10)
+}
+
+function toLocalDateTimeValue(value: string | null | undefined) {
+  if (!value) return currentLocalDateTimeValue()
+
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return currentLocalDateTimeValue()
+
+  const offset = parsed.getTimezoneOffset()
+  return new Date(parsed.getTime() - offset * 60_000).toISOString().slice(0, 16)
+}
+
+function ledgerHrefForOccurredAt(value: string) {
+  const match = value.match(/^(\d{4})-(\d{2})-/)
+  if (!match) return '/ledger'
+
+  return `/ledger?year=${match[1]}&month=${Number(match[2])}`
 }
 
 function isCurrency(value: string | null | undefined): value is Currency {
@@ -71,40 +140,120 @@ function formatAccountLabel(account: Pick<FamilyAccount, 'name' | 'currency'>) {
   return `${account.name} (${account.currency})`
 }
 
+function getAccountGroupLabel(account: Pick<FamilyAccount, 'owner' | 'shared'>) {
+  if (account.shared) return '共通帳戶'
+
+  const owner = normalizeOwner(account.owner)
+  return owner === 'Livia' ? 'Livia' : 'Oscar'
+}
+
+function isInteractiveElement(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) return false
+  return Boolean(target.closest('button,a,input,select,textarea,label,[role="button"]'))
+}
+
+function buildAccountOptions(
+  accounts: Pick<FamilyAccount, 'id' | 'name' | 'currency' | 'owner' | 'shared'>[],
+) {
+  const grouped = new Map<string, SelectOption[]>()
+  const groupOrder = ['共通帳戶', 'Oscar', 'Livia']
+
+  for (const account of accounts) {
+    const label = getAccountGroupLabel(account)
+    const options = grouped.get(label) ?? []
+    options.push({
+      value: account.id,
+      label: formatAccountLabel(account),
+    })
+    grouped.set(label, options)
+  }
+
+  return groupOrder
+    .map((label) => {
+      const options = grouped.get(label)
+      if (!options?.length) return null
+      return { label, options }
+    })
+    .filter((group): group is SelectOptionGroup => Boolean(group))
+}
+
+function buildReminderAccountOptions(
+  accounts: Pick<FamilyAccount, 'id' | 'name' | 'currency' | 'type'>[],
+) {
+  const grouped = new Map<string, SelectOption[]>()
+  const groupOrder = ['房屋帳戶', '汽車帳戶']
+
+  for (const account of accounts) {
+    const label = account.type === '車輛' ? '汽車帳戶' : '房屋帳戶'
+    const options = grouped.get(label) ?? []
+    options.push({
+      value: account.id,
+      label: formatAccountLabel(account),
+    })
+    grouped.set(label, options)
+  }
+
+  return groupOrder
+    .map((label) => {
+      const options = grouped.get(label)
+      if (!options?.length) return null
+      return { label, options }
+    })
+    .filter((group): group is SelectOptionGroup => Boolean(group))
+}
+
 function amountAccentClass(kind: Kind) {
+  if (kind === 'reminder') return 'text-[#4f8d7c]'
   if (kind === 'income') return 'text-[#2aa566]'
   if (kind === 'transfer') return 'text-slate-950'
   return 'text-[#17b79c]'
 }
 
 function amountDisplayClass(kind: Kind) {
+  if (kind === 'reminder') {
+    return 'text-[2.85rem] leading-none tracking-[-0.06em] sm:text-[3.25rem]'
+  }
   if (kind === 'transfer') {
-    return 'text-[4rem] leading-none tracking-[-0.06em]'
+    return 'text-[3.55rem] leading-none tracking-[-0.06em] sm:text-[4rem]'
   }
 
-  return 'text-[3.35rem] leading-none tracking-[-0.06em] sm:text-[3.8rem]'
+  return 'text-[3.55rem] leading-none tracking-[-0.06em] sm:text-[4rem]'
 }
 
 function amountLineClass(kind: Kind) {
+  if (kind === 'reminder') return 'bg-[#4f8d7c]'
   if (kind === 'income') return 'bg-[#2aa566]'
   if (kind === 'transfer') return 'bg-[#f2b232]'
   return 'bg-[#17b79c]'
 }
 
 function keypadShortcutActiveClass(kind: Kind) {
+  if (kind === 'reminder') return 'bg-[#edf8f4] text-[#356f5f] shadow-[0_14px_28px_rgba(79,141,124,0.14)]'
   if (kind === 'income') return 'bg-[#fff2ec] text-[#d85d28] shadow-[0_14px_28px_rgba(216,93,40,0.14)]'
   if (kind === 'transfer') return 'bg-[#fff2df] text-[#d18c11] shadow-[0_14px_28px_rgba(242,178,50,0.18)]'
   return 'bg-[#ecfdf8] text-[#15957d] shadow-[0_14px_28px_rgba(21,149,125,0.14)]'
 }
 
-function pageSurfaceClass(kind: Kind) {
-  if (kind === 'income') return 'from-[#fff4eb] via-white to-[#fff9f1]'
-  if (kind === 'transfer') return 'from-[#fff8e9] via-white to-[#fffdf8]'
-  return 'from-[#ecfdf8] via-white to-[#fff8ec]'
+function evaluateAmount(amount: string): number {
+  if (!amount) return 0
+  const parts = amount.split('+').filter((part) => part !== '' && part !== '.')
+  let total = 0
+  for (const part of parts) {
+    const n = Number(part)
+    if (Number.isFinite(n)) total += n
+  }
+  return total
 }
 
 function formatAmountDisplay(amount: string) {
   if (!amount) return '0.00'
+
+  if (amount.includes('+')) {
+    return evaluateAmount(amount).toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })
+  }
 
   const [rawInteger = '0', rawDecimal = ''] = amount.split('.')
   const normalizedInteger = rawInteger.replace(/^0+(?=\d)/, '') || '0'
@@ -114,23 +263,49 @@ function formatAmountDisplay(amount: string) {
   return `${formattedInteger}.${rawDecimal.padEnd(2, '0').slice(0, 2)}`
 }
 
+function formatMoney(value: number, currency: string) {
+  const amount = Math.abs(value).toLocaleString('zh-TW', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })
+  return currency === 'TWD' ? `NT$${amount}` : `${amount} ${currency}`
+}
+
 function parseAmount(amount: string) {
-  if (!amount) return 0
-  const parsed = Number(amount)
-  return Number.isFinite(parsed) ? parsed : 0
+  return evaluateAmount(amount)
 }
 
 function appendAmountInput(current: string, value: string) {
-  if (value === '.') {
-    if (current.includes('.')) return current
-    return current ? `${current}.` : '0.'
+  if (value === '+') {
+    if (!current) return current
+    if (current.endsWith('+')) return current
+    if (current.endsWith('.')) return current
+    return `${current}+`
   }
 
-  const next = current === '0' ? value : `${current}${value}`
-  const [integer, decimal = ''] = next.split('.')
+  if (value === '.') {
+    const lastOperand = current.split('+').pop() ?? ''
+    if (lastOperand.includes('.')) return current
+    if (!current || current.endsWith('+')) return `${current}0.`
+    return `${current}.`
+  }
+
+  const parts = current.split('+')
+  const lastOperand = parts[parts.length - 1] ?? ''
+  if (lastOperand === '0') {
+    parts[parts.length - 1] = value
+    return parts.join('+')
+  }
+
+  const nextLast = `${lastOperand}${value}`
+  const [integer, decimal = ''] = nextLast.split('.')
   const normalizedInteger = integer.replace(/^0+(?=\d)/, '') || '0'
   if (decimal.length > 2) return current
-  return next.includes('.') ? `${normalizedInteger}.${decimal}` : normalizedInteger
+
+  parts[parts.length - 1] = nextLast.includes('.')
+    ? `${normalizedInteger}.${decimal}`
+    : normalizedInteger
+  return parts.join('+')
 }
 
 function removeAmountCharacter(current: string) {
@@ -138,6 +313,7 @@ function removeAmountCharacter(current: string) {
   const trimmed = current.slice(0, -1)
   if (trimmed === '0') return ''
   if (trimmed.endsWith('.')) return trimmed
+  if (trimmed.includes('+')) return trimmed
   return trimmed.replace(/^0+(?=\d)/, '') || trimmed
 }
 
@@ -157,13 +333,28 @@ function formatOccurredAtLabel(value: string) {
 }
 
 function accountFieldLabel(kind: Kind) {
+  if (kind === 'reminder') return '關聯帳戶'
   if (kind === 'income') return '入帳帳戶'
   return '帳戶'
 }
 
 function accountFieldPlaceholder(kind: Kind) {
+  if (kind === 'reminder') return '選擇房屋或汽車帳戶'
   if (kind === 'income') return '選擇入帳帳戶'
   return '選擇付款帳戶'
+}
+
+function formatReminderDueLabel(value: string) {
+  if (!value) return '選擇日期'
+
+  const parsed = new Date(`${value}T12:00:00`)
+  if (Number.isNaN(parsed.getTime())) return '選擇日期'
+
+  const now = new Date()
+  const sameDay = parsed.toDateString() === now.toDateString()
+  const dateLabel = `${parsed.getFullYear()} / ${parsed.getMonth() + 1} / ${parsed.getDate()}`
+
+  return sameDay ? `今天 · ${dateLabel}` : dateLabel
 }
 
 function resolveCategorySelection(
@@ -199,18 +390,110 @@ function resolveCategorySelection(
 function buildChildOptions(group: CategoryPickerGroup | null): PickerOption[] {
   if (!group) return []
   if (group.children.length === 0) {
-    return [{ id: group.parent.id, label: group.parent.name, hint: '直接使用' }]
+    return [{ id: group.parent.id, label: group.parent.name }]
   }
 
   return group.children.map((child) => ({ id: child.id, label: child.name }))
 }
 
-function cycleOption(items: PickerOption[], selectedId: string, direction: -1 | 1) {
-  if (items.length === 0) return ''
+function PickerWheel({
+  items,
+  selectedId,
+  onSelect,
+}: {
+  items: PickerOption[]
+  selectedId: string
+  onSelect: (value: string) => void
+}) {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const scrollTimeoutRef = useRef<number | null>(null)
+  const selectedIndex = Math.max(0, items.findIndex((item) => item.id === selectedId))
+  const selectedLoopIndex = items.length + selectedIndex
+  const loopedItems = [0, 1, 2].flatMap((cycle) => (
+    items.map((item) => ({ ...item, loopKey: `${cycle}-${item.id}` }))
+  ))
 
-  const currentIndex = Math.max(0, items.findIndex((item) => item.id === selectedId))
-  const nextIndex = (currentIndex + direction + items.length) % items.length
-  return items[nextIndex]?.id ?? items[0]?.id ?? ''
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container || items.length === 0) return
+
+    const selectedIndex = Math.max(0, items.findIndex((item) => item.id === selectedId))
+    const targetScrollTop = (items.length + selectedIndex) * WHEEL_ITEM_HEIGHT
+    if (Math.abs(container.scrollTop - targetScrollTop) < 4) return
+
+    container.scrollTo({ top: targetScrollTop, behavior: 'smooth' })
+  }, [items, selectedId])
+
+  useEffect(() => {
+    return () => {
+      if (scrollTimeoutRef.current != null) {
+        window.clearTimeout(scrollTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  function handleScroll() {
+    if (scrollTimeoutRef.current != null) {
+      window.clearTimeout(scrollTimeoutRef.current)
+    }
+
+    scrollTimeoutRef.current = window.setTimeout(() => {
+      const container = containerRef.current
+      if (!container || items.length === 0) return
+
+      const rawIndex = Math.max(0, Math.round(container.scrollTop / WHEEL_ITEM_HEIGHT))
+      const nextIndex = rawIndex % items.length
+      if (rawIndex < items.length || rawIndex >= items.length * 2) {
+        container.scrollTo({
+          top: (items.length + nextIndex) * WHEEL_ITEM_HEIGHT,
+          behavior: 'auto',
+        })
+      }
+
+      const nextItem = items[nextIndex]
+      if (!nextItem || nextItem.id === selectedId) return
+      onSelect(nextItem.id)
+    }, 90)
+  }
+
+  return (
+    <div className="relative min-w-0">
+      <div className="relative overflow-hidden rounded-[1.25rem] bg-white/82">
+        <div className="pointer-events-none absolute inset-x-2 top-1/2 z-10 h-[52px] -translate-y-1/2 rounded-[1rem] border border-[#eadfce] bg-white shadow-[0_10px_18px_rgba(15,23,42,0.06)]" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-16 bg-gradient-to-b from-[#faf7f0] via-[#faf7f0]/92 to-transparent" />
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-16 bg-gradient-to-t from-[#faf7f0] via-[#faf7f0]/92 to-transparent" />
+        <div
+          ref={containerRef}
+          onScroll={handleScroll}
+          className="no-scrollbar snap-y snap-mandatory overflow-y-auto px-2"
+          style={{
+            height: `${WHEEL_ITEM_HEIGHT * WHEEL_VISIBLE_ROWS}px`,
+            paddingTop: `${WHEEL_ITEM_HEIGHT * 2}px`,
+            paddingBottom: `${WHEEL_ITEM_HEIGHT * 2}px`,
+          }}
+        >
+          {loopedItems.map((item, loopIndex) => {
+            const isActive = loopIndex === selectedLoopIndex
+
+            return (
+              <button
+                key={item.loopKey}
+                type="button"
+                onClick={() => onSelect(item.id)}
+                className={`relative z-20 flex h-[52px] w-full snap-center flex-col items-center justify-center rounded-[1rem] px-2 text-center transition ${
+                  isActive ? 'text-slate-950' : 'text-slate-400'
+                }`}
+              >
+                <span className={`truncate font-black ${isActive ? 'text-[1.04rem]' : 'text-[0.94rem]'}`}>
+                  {item.label}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
 }
 
 function FieldLabel({
@@ -241,7 +524,7 @@ function SelectFieldRow({
   value: string
   selectedValue: string
   onChange: (value: string) => void
-  options: Array<{ value: string; label: string }>
+  options: Array<SelectOption | SelectOptionGroup>
 }) {
   return (
     <label className="relative flex min-h-[4.75rem] items-center justify-between gap-4 px-5">
@@ -258,11 +541,21 @@ function SelectFieldRow({
         className="absolute inset-0 cursor-pointer opacity-0"
         aria-label={label}
       >
-        {options.map((option) => (
-          <option key={option.value || '__empty'} value={option.value}>
-            {option.label}
-          </option>
-        ))}
+        {options.map((option) =>
+          'options' in option ? (
+            <optgroup key={option.label} label={option.label}>
+              {option.options.map((groupedOption) => (
+                <option key={groupedOption.value || '__empty'} value={groupedOption.value}>
+                  {groupedOption.label}
+                </option>
+              ))}
+            </optgroup>
+          ) : (
+            <option key={option.value || '__empty'} value={option.value}>
+              {option.label}
+            </option>
+          ),
+        )}
       </select>
     </label>
   )
@@ -364,13 +657,16 @@ function TransferAccountCell({
   value: string
   selectedValue: string
   onChange: (value: string) => void
-  options: Array<{ value: string; label: string }>
+  options: Array<SelectOption | SelectOptionGroup>
 }) {
   return (
-    <label className="relative flex min-h-[4.55rem] min-w-0 items-center rounded-[1.35rem] border border-[#ece4d8] bg-[#fcfbf8] px-4 pr-10">
+    <label className="relative flex min-h-[5.35rem] min-w-0 items-start rounded-[1.35rem] border border-[#ece4d8] bg-[#fcfbf8] px-4 py-3 pr-10">
       <div className="min-w-0">
         <div className="text-[0.68rem] font-black tracking-[0.16em] text-slate-400">{label}</div>
-        <div className={`mt-1 truncate text-[1rem] font-black ${selectedValue ? 'text-slate-950' : 'text-slate-400'}`}>
+        <div
+          className={`mt-1 text-[0.88rem] font-black leading-tight ${selectedValue ? 'text-slate-950' : 'text-slate-400'}`}
+          style={{ wordBreak: 'break-word' }}
+        >
           {value}
         </div>
       </div>
@@ -381,11 +677,21 @@ function TransferAccountCell({
         className="absolute inset-0 cursor-pointer opacity-0"
         aria-label={label}
       >
-        {options.map((option) => (
-          <option key={option.value || '__empty'} value={option.value}>
-            {option.label}
-          </option>
-        ))}
+        {options.map((option) =>
+          'options' in option ? (
+            <optgroup key={option.label} label={option.label}>
+              {option.options.map((groupedOption) => (
+                <option key={groupedOption.value || '__empty'} value={groupedOption.value}>
+                  {groupedOption.label}
+                </option>
+              ))}
+            </optgroup>
+          ) : (
+            <option key={option.value || '__empty'} value={option.value}>
+              {option.label}
+            </option>
+          ),
+        )}
       </select>
     </label>
   )
@@ -400,19 +706,21 @@ function TransferAccountPairRow({
   targetSelectedValue,
   targetOptions,
   onTargetChange,
+  onSwap,
 }: {
   sourceValue: string
   sourceSelectedValue: string
-  sourceOptions: Array<{ value: string; label: string }>
+  sourceOptions: Array<SelectOption | SelectOptionGroup>
   onSourceChange: (value: string) => void
   targetValue: string
   targetSelectedValue: string
-  targetOptions: Array<{ value: string; label: string }>
+  targetOptions: Array<SelectOption | SelectOptionGroup>
   onTargetChange: (value: string) => void
+  onSwap: () => void
 }) {
   return (
     <div className="rounded-[1.6rem] border border-[#f0e8dc] bg-white p-3 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
-      <div className="grid grid-cols-[minmax(0,1fr)_2rem_minmax(0,1fr)] items-center gap-2">
+      <div className="grid grid-cols-[minmax(0,1fr)_3rem_minmax(0,1fr)] items-stretch gap-2">
         <TransferAccountCell
           label="轉出"
           value={sourceValue}
@@ -420,7 +728,15 @@ function TransferAccountPairRow({
           onChange={onSourceChange}
           options={sourceOptions}
         />
-        <div className="flex items-center justify-center text-xl font-black text-slate-300">⇄</div>
+        <button
+          type="button"
+          onClick={onSwap}
+          className="flex min-h-[5.35rem] items-center justify-center rounded-[1.15rem] border border-[#ece4d8] bg-[#fcfbf8] text-[1.45rem] font-black text-[#d18c11] transition hover:border-[#d8c7b0] hover:bg-[#fff8e7] hover:text-[#9b6b06]"
+          aria-label="交換轉出與轉入帳戶"
+          title="交換左右帳戶"
+        >
+          ⇄
+        </button>
         <TransferAccountCell
           label="轉入"
           value={targetValue}
@@ -459,6 +775,32 @@ function TransferDateRow({
   )
 }
 
+function ReminderDueDateRow({
+  value,
+  onChange,
+}: {
+  value: string
+  onChange: (value: string) => void
+}) {
+  return (
+    <label className="relative flex min-h-[4.35rem] items-center justify-between gap-4 rounded-[1.35rem] border border-[#d8e7de] bg-[#f7fbf8] px-4">
+      <div className="flex items-center gap-3">
+        <span className="text-[0.68rem] font-black tracking-[0.16em] text-[#7b9e91]">下次提醒</span>
+      </div>
+      <span className={`truncate text-right text-[1rem] font-black ${value ? 'text-slate-950' : 'text-slate-400'}`}>
+        {formatReminderDueLabel(value)}
+      </span>
+      <input
+        type="date"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="absolute inset-0 cursor-pointer opacity-0"
+        aria-label="下次提醒日期"
+      />
+    </label>
+  )
+}
+
 function TransferNoteRow({
   value,
   onChange,
@@ -481,104 +823,6 @@ function TransferNoteRow({
   )
 }
 
-function PickerWheel({
-  title,
-  items,
-  selectedId,
-  onSelect,
-}: {
-  title: string
-  items: PickerOption[]
-  selectedId: string
-  onSelect: (value: string) => void
-}) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const scrollTimeoutRef = useRef<number | null>(null)
-
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container || items.length === 0) return
-
-    const selectedIndex = Math.max(0, items.findIndex((item) => item.id === selectedId))
-    const targetScrollTop = selectedIndex * WHEEL_ITEM_HEIGHT
-    if (Math.abs(container.scrollTop - targetScrollTop) < 4) return
-
-    container.scrollTo({ top: targetScrollTop, behavior: 'smooth' })
-  }, [items, selectedId])
-
-  useEffect(() => {
-    return () => {
-      if (scrollTimeoutRef.current != null) {
-        window.clearTimeout(scrollTimeoutRef.current)
-      }
-    }
-  }, [])
-
-  function handleScroll() {
-    if (scrollTimeoutRef.current != null) {
-      window.clearTimeout(scrollTimeoutRef.current)
-    }
-
-    scrollTimeoutRef.current = window.setTimeout(() => {
-      const container = containerRef.current
-      if (!container || items.length === 0) return
-
-      const nextIndex = Math.min(
-        items.length - 1,
-        Math.max(0, Math.round(container.scrollTop / WHEEL_ITEM_HEIGHT)),
-      )
-      const nextItem = items[nextIndex]
-      if (!nextItem || nextItem.id === selectedId) return
-      onSelect(nextItem.id)
-    }, 90)
-  }
-
-  return (
-    <div className="relative min-w-0">
-      <div className="mb-3 px-2 text-center text-[0.7rem] font-black tracking-[0.18em] text-slate-400">
-        {title}
-      </div>
-      <div className="relative overflow-hidden rounded-[1.5rem] bg-white/78">
-        <div className="pointer-events-none absolute inset-x-3 top-1/2 z-10 h-[58px] -translate-y-1/2 rounded-[1.2rem] border border-white/85 bg-[#fff7ea]/92 shadow-[0_12px_20px_rgba(15,23,42,0.06)]" />
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-16 bg-gradient-to-b from-[#faf7f0] via-[#faf7f0]/92 to-transparent" />
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-16 bg-gradient-to-t from-[#faf7f0] via-[#faf7f0]/92 to-transparent" />
-        <div
-          ref={containerRef}
-          onScroll={handleScroll}
-          className="no-scrollbar snap-y snap-mandatory overflow-y-auto px-3"
-          style={{
-            height: `${WHEEL_ITEM_HEIGHT * WHEEL_VISIBLE_ROWS}px`,
-            paddingTop: `${WHEEL_ITEM_HEIGHT * 2}px`,
-            paddingBottom: `${WHEEL_ITEM_HEIGHT * 2}px`,
-          }}
-        >
-          {items.map((item) => {
-            const isActive = item.id === selectedId
-
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => onSelect(item.id)}
-                className={`flex h-[58px] w-full snap-center flex-col items-center justify-center rounded-[1.1rem] px-3 text-center transition ${
-                  isActive ? 'text-slate-950' : 'text-slate-400'
-                }`}
-              >
-                <span className="truncate text-[1rem] font-black">{item.label}</span>
-                {item.hint ? (
-                  <span className="mt-0.5 text-[0.68rem] font-bold tracking-[0.12em] text-slate-400">
-                    {item.hint}
-                  </span>
-                ) : null}
-              </button>
-            )
-          })}
-        </div>
-      </div>
-    </div>
-  )
-}
-
 function CategoryFieldRow({
   value,
   onOpen,
@@ -590,13 +834,12 @@ function CategoryFieldRow({
     <button
       type="button"
       onClick={onOpen}
-      className="flex min-h-[4.75rem] w-full items-center justify-between gap-4 px-5 text-left"
+      className="flex min-h-[4.35rem] w-full items-center justify-between gap-4 px-5 text-left"
     >
       <FieldLabel tone="bg-[#ff78a6]" label="分類" />
       <div className="flex min-w-0 items-center gap-3">
         <div className="min-w-0 text-right">
-          <div className="truncate text-[1.05rem] font-black text-slate-950">{value}</div>
-          <div className="mt-1 text-xs font-bold text-slate-400">點一下從底部選擇母分類與子分類</div>
+          <div className="truncate text-[1rem] font-black text-slate-900">{value.replace('›', '>')}</div>
         </div>
         <span className="text-lg text-slate-300">›</span>
       </div>
@@ -612,31 +855,31 @@ function CategoryPickerSheet({
   selectedCategoryId,
   onParentChange,
   onCategoryChange,
-  onParentStep,
-  onCategoryStep,
+  onOpenSettings,
   onClose,
 }: {
   open: boolean
   categories: FamilyCategory[]
-  kind: Kind
+  kind: TransactionKind
   selectedParentId: string
   selectedCategoryId: string
   onParentChange: (value: string) => void
   onCategoryChange: (value: string) => void
-  onParentStep: (direction: -1 | 1) => void
-  onCategoryStep: (direction: -1 | 1) => void
+  onOpenSettings: () => void
   onClose: () => void
 }) {
   const groups = buildCategoryPickerGroups(categories, kind)
   const selectedGroup = groups.find((group) => group.parent.id === selectedParentId) ?? groups[0] ?? null
-  const selectedCategoryPath = getCategoryPath(selectedCategoryId, categories) ?? '選擇分類'
-  const childOptions = buildChildOptions(selectedGroup)
-  const selectedParentLabel = selectedGroup?.parent.name ?? '未選擇'
-  const selectedChildLabel = childOptions.find((item) => item.id === selectedCategoryId)?.label ?? '未選擇'
+  const parentOptions = groups.map((group) => ({ id: group.parent.id, label: group.parent.name }))
+  const childOptions = selectedGroup ? buildChildOptions(selectedGroup) : []
+  const selectedChildLabel =
+    childOptions.find((option) => option.id === selectedCategoryId)?.label ?? '請選子分類'
 
-  return (
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
     <div
-      className={`fixed inset-0 z-50 transition ${open ? 'pointer-events-auto' : 'pointer-events-none'}`}
+      className={`fixed inset-0 z-[80] transition ${open ? 'pointer-events-auto' : 'pointer-events-none'}`}
       aria-hidden={!open}
     >
       <button
@@ -650,13 +893,30 @@ function CategoryPickerSheet({
           open ? 'translate-y-0' : 'translate-y-full'
         }`}
       >
-        <div className="mx-auto w-full max-w-md rounded-t-[2.2rem] bg-[#faf7f0] px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-3 shadow-[0_-24px_60px_rgba(15,23,42,0.2)]">
-          <div className="mx-auto h-1.5 w-14 rounded-full bg-slate-200" />
-          <div className="mt-4 flex items-start justify-between gap-4">
-            <div>
-              <div className="text-xs font-black tracking-[0.16em] text-slate-400">分類選擇</div>
-              <div className="mt-2 text-xl font-black text-slate-950">{selectedCategoryPath}</div>
-            </div>
+        <div className="relative z-10 mx-auto w-full max-w-md rounded-t-[2.2rem] bg-[#faf7f0] px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-3 shadow-[0_-24px_60px_rgba(15,23,42,0.2)]">
+          <div className="relative flex items-center justify-between">
+            <button
+              type="button"
+              onClick={onOpenSettings}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-slate-600 shadow-[0_10px_20px_rgba(15,23,42,0.08)] transition active:scale-[0.97]"
+              aria-label="分類設定"
+              title="分類設定"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none">
+                <path
+                  d="M12 8.25a3.75 3.75 0 1 0 0 7.5 3.75 3.75 0 0 0 0-7.5Z"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                />
+                <path
+                  d="M19.08 13.58c.06-.5.06-1.03 0-1.58l1.57-1.21-1.5-2.6-1.86.75a7.3 7.3 0 0 0-1.36-.78l-.28-1.98h-3l-.28 1.98c-.5.2-.96.46-1.38.78l-1.84-.75-1.5 2.6L8.92 12a7.5 7.5 0 0 0 0 1.58l-1.57 1.21 1.5 2.6 1.84-.75c.43.32.89.58 1.38.78l.28 1.98h3l.28-1.98c.49-.2.95-.46 1.36-.78l1.86.75 1.5-2.6-1.57-1.21Z"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+            <div className="absolute left-1/2 top-1/2 h-1.5 w-14 -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-200" />
             <button
               type="button"
               onClick={onClose}
@@ -666,70 +926,413 @@ function CategoryPickerSheet({
             </button>
           </div>
 
-          <div className="mt-5 rounded-[2rem] bg-white/88 p-3 shadow-[0_20px_40px_rgba(15,23,42,0.08)]">
-            <div className="mb-3 grid grid-cols-2 gap-2">
-              <div className="rounded-[1.35rem] bg-[#fff7ea] px-3 py-3">
-                <div className="text-[0.68rem] font-black tracking-[0.14em] text-slate-400">母分類工具</div>
-                <div className="mt-1 truncate text-sm font-black text-slate-950">{selectedParentLabel}</div>
-                <div className="mt-3 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => onParentStep(-1)}
-                    className="flex-1 rounded-full bg-white px-3 py-2 text-xs font-black text-slate-500 shadow-[0_8px_18px_rgba(15,23,42,0.06)]"
-                  >
-                    上一項
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onParentStep(1)}
-                    className="flex-1 rounded-full bg-white px-3 py-2 text-xs font-black text-slate-500 shadow-[0_8px_18px_rgba(15,23,42,0.06)]"
-                  >
-                    下一項
-                  </button>
+          {groups.length === 0 ? (
+            <div className="mt-4 rounded-[1.6rem] bg-white/90 px-4 py-10 text-center text-sm font-bold text-slate-400 shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
+              還沒有 {KIND_LABELS[kind]} 分類，點左上齒輪新增
+            </div>
+          ) : (
+            <>
+              <div className="mt-4 grid grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] gap-3">
+                <div className="rounded-[1.6rem] bg-white/90 px-2 pb-2 pt-3 shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
+                  <div className="px-3 pb-2 text-xs font-black tracking-[0.16em] text-slate-400">
+                    一級分類
+                  </div>
+                  <PickerWheel
+                    items={parentOptions}
+                    selectedId={selectedGroup?.parent.id ?? ''}
+                    onSelect={onParentChange}
+                  />
+                </div>
+
+                <div className="rounded-[1.6rem] bg-white/90 px-2 pb-2 pt-3 shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
+                  <div className="flex items-center justify-between px-3 pb-2">
+                    <div className="text-xs font-black tracking-[0.16em] text-slate-400">二級分類</div>
+                    <div className="text-xs font-black text-slate-300">{selectedChildLabel}</div>
+                  </div>
+                  {childOptions.length > 0 ? (
+                    <PickerWheel
+                      items={childOptions}
+                      selectedId={selectedCategoryId}
+                      onSelect={onCategoryChange}
+                    />
+                  ) : (
+                    <div className="flex h-[calc(52px*5)] items-center justify-center px-4 text-center text-sm font-bold text-slate-400">
+                      此分類沒有子分類
+                    </div>
+                  )}
                 </div>
               </div>
-
-              <div className="rounded-[1.35rem] bg-[#eef8ff] px-3 py-3">
-                <div className="text-[0.68rem] font-black tracking-[0.14em] text-slate-400">子分類工具</div>
-                <div className="mt-1 truncate text-sm font-black text-slate-950">{selectedChildLabel}</div>
-                <div className="mt-3 flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => onCategoryStep(-1)}
-                    className="flex-1 rounded-full bg-white px-3 py-2 text-xs font-black text-slate-500 shadow-[0_8px_18px_rgba(15,23,42,0.06)]"
-                  >
-                    上一項
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onCategoryStep(1)}
-                    className="flex-1 rounded-full bg-white px-3 py-2 text-xs font-black text-slate-500 shadow-[0_8px_18px_rgba(15,23,42,0.06)]"
-                  >
-                    下一項
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-[minmax(0,1fr)_1.5rem_minmax(0,1fr)] items-start gap-2">
-              <PickerWheel
-                title="母分類"
-                items={groups.map((group) => ({ id: group.parent.id, label: group.parent.name }))}
-                selectedId={selectedGroup?.parent.id ?? ''}
-                onSelect={onParentChange}
-              />
-              <div className="pt-[6.5rem] text-center text-2xl font-black text-slate-300">›</div>
-              <PickerWheel
-                title="子分類"
-                items={childOptions}
-                selectedId={selectedCategoryId}
-                onSelect={onCategoryChange}
-              />
-            </div>
-          </div>
+            </>
+          )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
+  )
+}
+
+function categoryKindLabel(kind: Kind) {
+  return `${KIND_LABELS[kind]}分類`
+}
+
+function CategoryManagerSheet({
+  open,
+  categories,
+  kind,
+  selectedCategoryId,
+  onCategoryUpsert,
+  onCategoryArchive,
+  onClose,
+}: {
+  open: boolean
+  categories: FamilyCategory[]
+  kind: TransactionKind
+  selectedCategoryId: string
+  onCategoryUpsert: (category: FamilyCategory) => void
+  onCategoryArchive: (archivedIds: string[]) => void
+  onClose: () => void
+}) {
+  const [query, setQuery] = useState('')
+  const [rootName, setRootName] = useState('')
+  const [childNames, setChildNames] = useState<Record<string, string>>({})
+  const [addingChildParentId, setAddingChildParentId] = useState<string | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingName, setEditingName] = useState('')
+  const [pendingKey, setPendingKey] = useState<string | null>(null)
+  const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
+
+  const groups = buildCategoryPickerGroups(categories, kind)
+  const normalizedQuery = query.trim().toLocaleLowerCase('zh-TW')
+  const filteredGroups = normalizedQuery
+    ? groups
+      .map((group) => {
+        const parentMatches = group.parent.name.toLocaleLowerCase('zh-TW').includes(normalizedQuery)
+        const children = group.children.filter((child) => (
+          parentMatches || child.name.toLocaleLowerCase('zh-TW').includes(normalizedQuery)
+        ))
+        return parentMatches || children.length > 0 ? { ...group, children } : null
+      })
+      .filter((group): group is CategoryPickerGroup => group !== null)
+    : groups
+
+  function handleEnter(event: KeyboardEvent<HTMLInputElement>, action: () => void) {
+    if (event.key !== 'Enter') return
+
+    event.preventDefault()
+    action()
+  }
+
+  async function handleCreate(name: string, parentId: string | null) {
+    const normalizedName = name.trim()
+    if (!normalizedName) {
+      setNotice({ tone: 'error', text: '分類名稱不能空白。' })
+      return
+    }
+
+    const key = parentId ? `create-child-${parentId}` : 'create-root'
+    setPendingKey(key)
+    setNotice(null)
+
+    try {
+      const result = await createCategory({ kind, name: normalizedName, parentId })
+      if (!result.ok) {
+        setNotice({ tone: 'error', text: result.error })
+        return
+      }
+
+      onCategoryUpsert(result.category)
+      if (parentId) {
+        setChildNames((current) => ({ ...current, [parentId]: '' }))
+        setAddingChildParentId(null)
+      } else {
+        setRootName('')
+      }
+      setNotice({ tone: 'success', text: '分類已新增。' })
+    } finally {
+      setPendingKey(null)
+    }
+  }
+
+  async function handleRename() {
+    if (!editingId) return
+
+    const normalizedName = editingName.trim()
+    if (!normalizedName) {
+      setNotice({ tone: 'error', text: '分類名稱不能空白。' })
+      return
+    }
+
+    setPendingKey(`rename-${editingId}`)
+    setNotice(null)
+
+    try {
+      const result = await renameCategory({ id: editingId, name: normalizedName })
+      if (!result.ok) {
+        setNotice({ tone: 'error', text: result.error })
+        return
+      }
+
+      onCategoryUpsert(result.category)
+      setEditingId(null)
+      setEditingName('')
+      setNotice({ tone: 'success', text: '分類已更新。' })
+    } finally {
+      setPendingKey(null)
+    }
+  }
+
+  async function handleArchive(category: FamilyCategory) {
+    const message = category.parent_id
+      ? `封存「${category.name}」？`
+      : `封存「${category.name}」與底下所有二級分類？`
+    if (!window.confirm(message)) return
+
+    setPendingKey(`archive-${category.id}`)
+    setNotice(null)
+
+    try {
+      const result = await archiveCategory(category.id)
+      if (!result.ok) {
+        setNotice({ tone: 'error', text: result.error })
+        return
+      }
+
+      onCategoryArchive(result.archivedIds)
+      if (result.archivedIds.includes(selectedCategoryId)) {
+        setNotice({ tone: 'success', text: '分類已封存，請重新選擇分類。' })
+        return
+      }
+
+      setNotice({ tone: 'success', text: '分類已封存。' })
+    } finally {
+      setPendingKey(null)
+    }
+  }
+
+  function startEditing(category: FamilyCategory) {
+    setEditingId(category.id)
+    setEditingName(category.name)
+    setNotice(null)
+  }
+
+  function renderCategoryRow(category: FamilyCategory, depth: 'parent' | 'child') {
+    const isEditing = editingId === category.id
+    const isPending = pendingKey === `rename-${category.id}` || pendingKey === `archive-${category.id}`
+
+    return (
+      <div
+        key={category.id}
+        className={`flex min-h-[4.35rem] items-center gap-3 border-b border-[#f0ece5] bg-white px-4 ${
+          depth === 'child' ? 'pl-10' : ''
+        }`}
+      >
+        <span
+          className={`h-9 w-9 shrink-0 rounded-[0.85rem] border ${
+            depth === 'parent'
+              ? 'border-[#eadfce] bg-[#fff9ee]'
+              : 'border-[#e6f3ee] bg-[#f2fffa]'
+          }`}
+          aria-hidden="true"
+        />
+
+        {isEditing ? (
+          <input
+            type="text"
+            value={editingName}
+            onChange={(event) => setEditingName(event.target.value)}
+            onKeyDown={(event) => handleEnter(event, handleRename)}
+            className="min-w-0 flex-1 rounded-[1rem] border border-[#eadfce] bg-[#fcfbf8] px-3 py-2 text-[1rem] font-black text-slate-950 outline-none"
+            aria-label="分類名稱"
+            autoFocus
+          />
+        ) : (
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[1rem] font-black text-slate-900">{category.name}</div>
+            <div className="mt-0.5 text-xs font-bold text-slate-400">
+              {depth === 'parent' ? '一級分類' : '二級分類'}
+            </div>
+          </div>
+        )}
+
+        {isEditing ? (
+          <div className="flex shrink-0 items-center gap-1.5">
+            <button
+              type="button"
+              onClick={handleRename}
+              disabled={Boolean(pendingKey)}
+              className="rounded-full bg-slate-950 px-3 py-2 text-xs font-black text-white disabled:opacity-50"
+            >
+              儲存
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setEditingId(null)
+                setEditingName('')
+              }}
+              disabled={Boolean(pendingKey)}
+              className="rounded-full bg-[#f4f1ea] px-3 py-2 text-xs font-black text-slate-500 disabled:opacity-50"
+            >
+              取消
+            </button>
+          </div>
+        ) : (
+          <div className="flex shrink-0 items-center gap-1.5">
+            {depth === 'parent' ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setAddingChildParentId(category.id)
+                  setNotice(null)
+                }}
+                disabled={Boolean(pendingKey)}
+                className="rounded-full bg-[#f2fbf7] px-3 py-2 text-xs font-black text-[#16866d] disabled:opacity-50"
+              >
+                二級
+              </button>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => startEditing(category)}
+              disabled={Boolean(pendingKey)}
+              className="rounded-full bg-[#f4f1ea] px-3 py-2 text-xs font-black text-slate-600 disabled:opacity-50"
+            >
+              修改
+            </button>
+            <button
+              type="button"
+              onClick={() => handleArchive(category)}
+              disabled={isPending || Boolean(pendingKey)}
+              className="rounded-full bg-[#fff1ee] px-3 py-2 text-xs font-black text-[#c9563f] disabled:opacity-50"
+            >
+              封存
+            </button>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
+    <div
+      className={`fixed inset-0 z-[80] bg-white transition ${
+        open ? 'pointer-events-auto translate-y-0 opacity-100' : 'pointer-events-none translate-y-4 opacity-0'
+      }`}
+      aria-hidden={!open}
+    >
+      <div className="mx-auto flex h-full w-full max-w-md flex-col bg-white">
+        <div className="shrink-0 border-b border-[#f1ede6] bg-white px-4 pb-3 pt-[calc(0.9rem+env(safe-area-inset-top))]">
+          <div className="grid grid-cols-[4rem_minmax(0,1fr)_4rem] items-center">
+            <div className="text-left text-sm font-black text-[#d8a72a]">{categoryKindLabel(kind)}</div>
+            <div className="text-center text-[1.05rem] font-black text-slate-950">分類設定</div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="justify-self-end rounded-full p-2 text-2xl leading-none text-slate-500"
+              aria-label="關閉分類設定"
+            >
+              ×
+            </button>
+          </div>
+
+          <label className="mt-4 flex min-h-11 items-center gap-2 rounded-full bg-[#f3f3f2] px-4">
+            <span className="text-lg text-slate-400" aria-hidden="true">⌕</span>
+            <input
+              type="text"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="快速搜尋分類"
+              className="ios-search-input min-w-0 flex-1 bg-transparent text-center font-black text-slate-700 outline-none placeholder:text-slate-400"
+              aria-label="快速搜尋分類"
+            />
+          </label>
+
+          <div className="mt-3 flex items-center gap-2 rounded-[1.25rem] border border-[#efe7dc] bg-[#fcfbf8] p-2">
+            <input
+              type="text"
+              value={rootName}
+              onChange={(event) => setRootName(event.target.value)}
+              onKeyDown={(event) => handleEnter(event, () => handleCreate(rootName, null))}
+              placeholder="新增一級分類"
+              className="ios-search-input min-w-0 flex-1 bg-transparent px-2 font-black text-slate-950 outline-none placeholder:text-slate-400"
+              aria-label="新增一級分類"
+            />
+            <button
+              type="button"
+              onClick={() => handleCreate(rootName, null)}
+              disabled={pendingKey === 'create-root'}
+              className="rounded-full bg-slate-950 px-4 py-2 text-sm font-black text-white disabled:opacity-50"
+            >
+              新增
+            </button>
+          </div>
+
+          {notice ? (
+            <div
+              className={`mt-3 rounded-[1rem] px-3 py-2 text-sm font-black ${
+                notice.tone === 'success'
+                  ? 'bg-[#ebfff7] text-[#187d5f]'
+                  : 'bg-[#fff3f2] text-[#c2413a]'
+              }`}
+            >
+              {notice.text}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto bg-[#fbfaf7] pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
+          {filteredGroups.length > 0 ? (
+            filteredGroups.map((group) => (
+              <section key={group.parent.id} className="mt-3 border-y border-[#f1ede6]">
+                {renderCategoryRow(group.parent, 'parent')}
+
+                {addingChildParentId === group.parent.id ? (
+                  <div className="flex min-h-[4.1rem] items-center gap-2 border-b border-[#f0ece5] bg-[#fffdf9] px-4 pl-10">
+                    <input
+                      type="text"
+                      value={childNames[group.parent.id] ?? ''}
+                      onChange={(event) => (
+                        setChildNames((current) => ({ ...current, [group.parent.id]: event.target.value }))
+                      )}
+                      onKeyDown={(event) => handleEnter(event, () => handleCreate(childNames[group.parent.id] ?? '', group.parent.id))}
+                      placeholder={`新增「${group.parent.name}」二級分類`}
+                      className="min-w-0 flex-1 rounded-[1rem] border border-[#eadfce] bg-white px-3 py-2 text-sm font-black text-slate-950 outline-none placeholder:text-slate-400"
+                      aria-label="新增二級分類"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleCreate(childNames[group.parent.id] ?? '', group.parent.id)}
+                      disabled={pendingKey === `create-child-${group.parent.id}`}
+                      className="rounded-full bg-slate-950 px-3 py-2 text-xs font-black text-white disabled:opacity-50"
+                    >
+                      新增
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAddingChildParentId(null)}
+                      disabled={Boolean(pendingKey)}
+                      className="rounded-full bg-[#f4f1ea] px-3 py-2 text-xs font-black text-slate-500 disabled:opacity-50"
+                    >
+                      取消
+                    </button>
+                  </div>
+                ) : null}
+
+                {group.children.map((child) => renderCategoryRow(child, 'child'))}
+              </section>
+            ))
+          ) : (
+            <div className="px-5 py-12 text-center text-sm font-bold text-slate-400">
+              沒有符合搜尋的分類
+            </div>
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body,
   )
 }
 
@@ -749,10 +1352,9 @@ function MerchantFieldRow({
       <FieldLabel tone="bg-[#53d8bf]" label="商家" />
       <div className="flex min-w-0 items-center gap-3">
         <div className="min-w-0 text-right">
-          <div className={`truncate text-[1.05rem] font-black ${value ? 'text-slate-950' : 'text-slate-400'}`}>
+          <div className={`truncate text-[1rem] font-black ${value ? 'text-slate-900' : 'text-slate-400'}`}>
             {value || '選擇商家'}
           </div>
-          <div className="mt-1 text-xs font-bold text-slate-400">點一下從底部輸入或選常用商家</div>
         </div>
         <span className="text-lg text-slate-300">›</span>
       </div>
@@ -762,20 +1364,70 @@ function MerchantFieldRow({
 
 function MerchantPickerSheet({
   open,
+  merchants,
+  merchantGroups,
   value,
   onChange,
-  suggestions,
+  onOpenSettings,
   onClose,
 }: {
   open: boolean
+  merchants: FamilyMerchant[]
+  merchantGroups: FamilyMerchantGroup[]
   value: string
   onChange: (value: string) => void
-  suggestions: FamilyMerchant[]
+  onOpenSettings: () => void
   onClose: () => void
 }) {
-  return (
+  const merchantPickerGroups = useMemo(
+    () => buildMerchantPickerGroups(merchants, merchantGroups),
+    [merchants, merchantGroups],
+  )
+  const [draftValue, setDraftValue] = useState(value)
+  const normalizedValue = draftValue.trim()
+  const normalizedLower = normalizedValue.toLocaleLowerCase('zh-TW')
+  const selectedMerchant = useMemo(
+    () => merchants.find((merchant) => merchant.name.trim().toLocaleLowerCase('zh-TW') === normalizedLower) ?? null,
+    [merchants, normalizedLower],
+  )
+  const selectedMerchantGroupId = selectedMerchant?.group_id ?? UNASSIGNED_MERCHANT_GROUP_ID
+  const [selectedGroupId, setSelectedGroupId] = useState(() => (
+    selectedMerchant ? selectedMerchantGroupId : 'recent'
+  ))
+  const resolvedGroupId = merchantPickerGroups.some((group) => group.id === selectedGroupId)
+    ? selectedGroupId
+    : selectedMerchant ? selectedMerchantGroupId : merchantPickerGroups[0]?.id ?? 'recent'
+  const selectedGroup = merchantPickerGroups.find((group) => group.id === resolvedGroupId) ?? merchantPickerGroups[0] ?? null
+  const selectedMerchantName = selectedMerchant?.name.trim().toLocaleLowerCase('zh-TW') ?? ''
+  const shouldFilterMerchants = normalizedLower.length > 0 && normalizedLower !== selectedMerchantName
+  const visibleMerchants = shouldFilterMerchants
+    ? [...merchants]
+        .filter((merchant) => merchant.name.toLocaleLowerCase('zh-TW').includes(normalizedLower))
+        .sort((a, b) => a.name.localeCompare(b.name, 'zh-TW'))
+    : selectedGroup?.merchants ?? []
+  const visibleOptions = selectedMerchant
+    ? visibleMerchants.map((merchant) => ({ id: merchant.id, label: merchant.name }))
+    : [{ id: '__placeholder__', label: '請選商家' }, ...visibleMerchants.map((merchant) => ({ id: merchant.id, label: merchant.name }))]
+  const canUseTypedValue = normalizedValue.length > 0 && !selectedMerchant
+
+  function handleSelectMerchant(name: string) {
+    setDraftValue(name)
+    const nextMerchant = merchants.find((merchant) => merchant.name.trim().toLocaleLowerCase('zh-TW') === name.trim().toLocaleLowerCase('zh-TW'))
+    if (nextMerchant) {
+      setSelectedGroupId(nextMerchant.group_id ?? UNASSIGNED_MERCHANT_GROUP_ID)
+    }
+  }
+
+  function handleComplete() {
+    onChange(draftValue.trim())
+    onClose()
+  }
+
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
     <div
-      className={`fixed inset-0 z-50 transition ${open ? 'pointer-events-auto' : 'pointer-events-none'}`}
+      className={`fixed inset-0 z-[80] transition ${open ? 'pointer-events-auto' : 'pointer-events-none'}`}
       aria-hidden={!open}
     >
       <button
@@ -785,120 +1437,1142 @@ function MerchantPickerSheet({
         aria-label="關閉商家選擇"
       />
       <div
-        className={`absolute inset-x-0 bottom-0 transition-transform duration-300 ${
+        className={`absolute inset-x-0 bottom-0 z-10 transition-transform duration-300 ${
           open ? 'translate-y-0' : 'translate-y-full'
         }`}
       >
         <div className="mx-auto w-full max-w-md rounded-t-[2.2rem] bg-[#faf7f0] px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-3 shadow-[0_-24px_60px_rgba(15,23,42,0.2)]">
-          <div className="mx-auto h-1.5 w-14 rounded-full bg-slate-200" />
-          <div className="mt-4 flex items-start justify-between gap-4">
-            <div>
-              <div className="text-xs font-black tracking-[0.16em] text-slate-400">商家選擇</div>
-              <div className="mt-2 text-xl font-black text-slate-950">{value.trim() || '輸入商家或直接選擇'}</div>
-            </div>
+          <div className="relative flex items-center justify-between">
             <button
               type="button"
-              onClick={onClose}
+              onClick={onOpenSettings}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-slate-600 shadow-[0_10px_20px_rgba(15,23,42,0.08)] transition active:scale-[0.97]"
+              aria-label="商家分類設定"
+              title="商家分類設定"
+            >
+              <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none">
+                <path
+                  d="M12 8.25a3.75 3.75 0 1 0 0 7.5 3.75 3.75 0 0 0 0-7.5Z"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                />
+                <path
+                  d="M19.08 13.58c.06-.5.06-1.03 0-1.58l1.57-1.21-1.5-2.6-1.86.75a7.3 7.3 0 0 0-1.36-.78l-.28-1.98h-3l-.28 1.98c-.5.2-.96.46-1.38.78l-1.84-.75-1.5 2.6L8.92 12a7.5 7.5 0 0 0 0 1.58l-1.57 1.21 1.5 2.6 1.84-.75c.43.32.89.58 1.38.78l.28 1.98h3l.28-1.98c.49-.2.95-.46 1.36-.78l1.86.75 1.5-2.6-1.57-1.21Z"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+            <div className="absolute left-1/2 top-1/2 h-1.5 w-14 -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-200" />
+            <button
+              type="button"
+              onClick={handleComplete}
               className="rounded-full bg-white px-4 py-2 text-sm font-black text-slate-500 shadow-[0_10px_20px_rgba(15,23,42,0.08)]"
             >
               完成
             </button>
           </div>
 
-          <div className="mt-5 rounded-[2rem] bg-white/88 p-4 shadow-[0_20px_40px_rgba(15,23,42,0.08)]">
+          <label className="mt-4 flex min-h-11 items-center gap-2 rounded-full bg-[#f3f3f2] px-4">
+            <span className="text-lg text-slate-400" aria-hidden="true">⌕</span>
             <input
               type="text"
-              value={value}
-              onChange={(event) => onChange(event.target.value)}
-              placeholder="商家或對象（選填）"
-              className="w-full rounded-[1.25rem] border border-[#ece6dc] bg-[#fcfbf8] px-4 py-4 text-[1.05rem] font-black text-slate-950 outline-none placeholder:font-bold placeholder:text-slate-300"
+              value={draftValue}
+              onChange={(event) => {
+                const nextValue = event.target.value
+                setDraftValue(nextValue)
+
+                const nextMerchant = merchants.find((merchant) => (
+                  merchant.name.trim().toLocaleLowerCase('zh-TW') === nextValue.trim().toLocaleLowerCase('zh-TW')
+                ))
+                if (nextMerchant) {
+                  setSelectedGroupId(nextMerchant.group_id ?? UNASSIGNED_MERCHANT_GROUP_ID)
+                }
+              }}
+              placeholder="搜尋或輸入商家"
+              className="ios-search-input min-w-0 flex-1 bg-transparent text-center font-black text-slate-700 outline-none placeholder:text-slate-400"
               aria-label="商家"
             />
+            {draftValue ? (
+              <button
+                type="button"
+                onClick={() => setDraftValue('')}
+                aria-label="清除商家搜尋"
+                className="flex h-6 w-6 items-center justify-center rounded-full text-base text-[#a0a4a8] hover:bg-[#eeebe4] hover:text-[#3a3d42]"
+              >
+                ×
+              </button>
+            ) : null}
+          </label>
 
-            {suggestions.length > 0 ? (
-              <div className="mt-4 flex flex-wrap gap-2">
-                {suggestions.map((merchant) => (
-                  <button
-                    key={merchant.id}
-                    type="button"
-                    onClick={() => onChange(merchant.name)}
-                    className={`rounded-full border px-3 py-2 text-sm font-black transition ${
-                      merchant.name === value.trim()
-                        ? 'border-[#1ab697] bg-[#ecfdf8] text-[#16927a]'
-                        : 'border-[#ebe5db] bg-[#fcfbf8] text-slate-500'
-                    }`}
-                  >
-                    {merchant.name}
-                  </button>
-                ))}
+          {merchantPickerGroups.length === 0 ? (
+            <div className="mt-4 rounded-[1.6rem] bg-white/90 px-4 py-10 text-center text-sm font-bold text-slate-400 shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
+              還沒有可用的商家
+            </div>
+          ) : (
+            <div className="mt-4 grid grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)] gap-3">
+              <div className="no-scrollbar max-h-[48vh] overflow-y-auto rounded-[1.6rem] bg-white/90 p-2 shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
+                <div className="space-y-1">
+                  {merchantPickerGroups.map((group) => {
+                    const isActive = group.id === selectedGroup?.id
+                    return (
+                      <button
+                        key={group.id}
+                        type="button"
+                        onClick={() => setSelectedGroupId(group.id)}
+                        className={`w-full rounded-[1rem] px-3 py-2 text-left text-sm font-black transition ${
+                          isActive
+                            ? 'bg-slate-950 text-white shadow-[0_8px_18px_rgba(15,23,42,0.16)]'
+                            : 'bg-[#f8f5ef] text-slate-600'
+                        }`}
+                      >
+                        {group.label}
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
-            ) : (
-              <div className="mt-4 text-sm font-bold text-slate-400">目前還沒有可選的常用商家</div>
-            )}
-          </div>
+
+              <div className="rounded-[1.6rem] bg-white/90 px-2 pb-2 pt-3 shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
+                <div className="px-3 pb-2 text-xs font-black tracking-[0.16em] text-slate-400">
+                  商家
+                </div>
+                {visibleOptions.length > 0 ? (
+                  <PickerWheel
+                    items={visibleOptions}
+                    selectedId={selectedMerchant?.id ?? '__placeholder__'}
+                    onSelect={(merchantId) => {
+                      if (merchantId === '__placeholder__') return
+                      const nextMerchant = visibleMerchants.find((merchant) => merchant.id === merchantId)
+                      if (!nextMerchant) return
+                      handleSelectMerchant(nextMerchant.name)
+                    }}
+                  />
+                ) : (
+                  <div className="flex h-[calc(52px*5)] flex-col items-center justify-center gap-3 px-4 text-center text-sm font-bold text-slate-400">
+                    <div>這個分類沒有商家</div>
+                    {canUseTypedValue ? (
+                      <button
+                        type="button"
+                        onClick={() => handleSelectMerchant(normalizedValue)}
+                        className="rounded-full bg-slate-950 px-4 py-2 text-sm font-black text-white"
+                      >
+                        使用「{normalizedValue}」
+                      </button>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }
 
-export function TransactionForm({ accounts, categories, merchants, initialPreset }: Props) {
-  const initialKind = isKind(initialPreset?.kind) ? initialPreset.kind : 'expense'
-  const initialCategorySelection = resolveCategorySelection(
-    buildCategoryPickerGroups(categories, initialKind),
-    initialPreset?.categoryId,
+function MerchantManagerSheet({
+  open,
+  groups,
+  merchants,
+  onGroupUpsert,
+  onGroupArchive,
+  onMerchantUpsert,
+  onClose,
+}: {
+  open: boolean
+  groups: FamilyMerchantGroup[]
+  merchants: FamilyMerchant[]
+  onGroupUpsert: (group: FamilyMerchantGroup) => void
+  onGroupArchive: (groupId: string) => void
+  onMerchantUpsert: (merchant: FamilyMerchant, previousName?: string) => void
+  onClose: () => void
+}) {
+  const [query, setQuery] = useState('')
+  const [managerView, setManagerView] = useState<'merchants' | 'groups'>('merchants')
+  const [rootName, setRootName] = useState('')
+  const [newMerchantName, setNewMerchantName] = useState('')
+  const [newMerchantGroupId, setNewMerchantGroupId] = useState(() => groups[0]?.id ?? '')
+  const merchantNameInputRef = useRef<HTMLInputElement>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editingName, setEditingName] = useState('')
+  const [editingMerchantId, setEditingMerchantId] = useState<string | null>(null)
+  const [editingMerchantName, setEditingMerchantName] = useState('')
+  const [pendingKey, setPendingKey] = useState<string | null>(null)
+  const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
+
+  function handleEnter(event: KeyboardEvent<HTMLInputElement>, action: () => void) {
+    if (event.key !== 'Enter') return
+
+    event.preventDefault()
+    action()
+  }
+
+  const merchantGroupOptions = [
+    { value: '', label: '未分類' },
+    ...groups.map((group) => ({ value: group.id, label: group.name })),
+  ]
+
+  const normalizedQuery = query.trim().toLocaleLowerCase('zh-TW')
+
+  const merchantCountByGroupId = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const merchant of merchants) {
+      if (!merchant.group_id) continue
+      counts.set(merchant.group_id, (counts.get(merchant.group_id) ?? 0) + 1)
+    }
+    return counts
+  }, [merchants])
+
+  const merchantsByGroupId = useMemo(() => {
+    const grouped = new Map<string, FamilyMerchant[]>()
+    const unassigned: FamilyMerchant[] = []
+
+    for (const merchant of merchants) {
+      if (!merchant.group_id) {
+        unassigned.push(merchant)
+        continue
+      }
+
+      const existing = grouped.get(merchant.group_id) ?? []
+      existing.push(merchant)
+      grouped.set(merchant.group_id, existing)
+    }
+
+    for (const list of grouped.values()) {
+      list.sort((a, b) => {
+        if (a.last_used_at !== b.last_used_at) {
+          return b.last_used_at.localeCompare(a.last_used_at)
+        }
+
+        return a.name.localeCompare(b.name, 'zh-TW')
+      })
+    }
+
+    unassigned.sort((a, b) => {
+      if (a.last_used_at !== b.last_used_at) {
+        return b.last_used_at.localeCompare(a.last_used_at)
+      }
+
+      return a.name.localeCompare(b.name, 'zh-TW')
+    })
+
+    return { grouped, unassigned }
+  }, [merchants])
+
+  const unassignedMerchantCount = merchantsByGroupId.unassigned.length
+  const recentMerchants = [...merchants]
+    .sort((a, b) => {
+      if (a.last_used_at !== b.last_used_at) {
+        return b.last_used_at.localeCompare(a.last_used_at)
+      }
+
+      return a.name.localeCompare(b.name, 'zh-TW')
+    })
+    .slice(0, 5)
+
+  const resolvedNewMerchantGroupId = useMemo(() => {
+    if (newMerchantGroupId === '') return ''
+    if (groups.some((group) => group.id === newMerchantGroupId)) return newMerchantGroupId
+    return groups[0]?.id ?? ''
+  }, [groups, newMerchantGroupId])
+
+  const filteredGroups = normalizedQuery
+    ? groups.filter((group) => {
+        const groupMatches = group.name.toLocaleLowerCase('zh-TW').includes(normalizedQuery)
+        const merchantMatches = (merchantsByGroupId.grouped.get(group.id) ?? []).some((merchant) =>
+          merchant.name.toLocaleLowerCase('zh-TW').includes(normalizedQuery),
+        )
+        return groupMatches || merchantMatches
+      })
+    : groups
+
+  const filteredUnassignedMerchants = normalizedQuery
+    ? merchantsByGroupId.unassigned.filter((merchant) =>
+        merchant.name.toLocaleLowerCase('zh-TW').includes(normalizedQuery),
+      )
+    : merchantsByGroupId.unassigned
+
+  async function handleCreate(name: string) {
+    const normalizedName = name.trim()
+    if (!normalizedName) {
+      setNotice({ tone: 'error', text: '商家分類名稱不能空白。' })
+      return
+    }
+
+    setPendingKey('create-group')
+    setNotice(null)
+
+    try {
+      const result = await createMerchantGroup(normalizedName)
+      if (!result.ok) {
+        setNotice({ tone: 'error', text: result.error })
+        return
+      }
+
+      onGroupUpsert(result.group)
+      setRootName('')
+      setNewMerchantGroupId(result.group.id)
+      setNotice({ tone: 'success', text: '商家分類已新增。' })
+    } finally {
+      setPendingKey(null)
+    }
+  }
+
+  async function handleCreateMerchant() {
+    const normalizedName = newMerchantName.trim()
+    if (!normalizedName) {
+      setNotice({ tone: 'error', text: '商家名稱不能空白。' })
+      return
+    }
+
+    setPendingKey('create-merchant')
+    setNotice(null)
+
+    try {
+      const result = await createMerchant({
+        name: normalizedName,
+        groupId: resolvedNewMerchantGroupId || null,
+      })
+      if (!result.ok) {
+        setNotice({ tone: 'error', text: result.error })
+        return
+      }
+
+      onMerchantUpsert(result.merchant)
+      setNewMerchantName('')
+      setNotice({ tone: 'success', text: '商家已新增並分類。' })
+    } finally {
+      setPendingKey(null)
+    }
+  }
+
+  async function handleRename() {
+    if (!editingId) return
+
+    const normalizedName = editingName.trim()
+    if (!normalizedName) {
+      setNotice({ tone: 'error', text: '商家分類名稱不能空白。' })
+      return
+    }
+
+    setPendingKey(`rename-${editingId}`)
+    setNotice(null)
+
+    try {
+      const result = await renameMerchantGroup({ id: editingId, name: normalizedName })
+      if (!result.ok) {
+        setNotice({ tone: 'error', text: result.error })
+        return
+      }
+
+      onGroupUpsert(result.group)
+      setEditingId(null)
+      setEditingName('')
+      setNotice({ tone: 'success', text: '商家分類已更新。' })
+    } finally {
+      setPendingKey(null)
+    }
+  }
+
+  async function handleArchive(groupId: string) {
+    if (!window.confirm('封存這個商家分類？分類裡的商家會回到未分類。')) return
+
+    setPendingKey(`archive-${groupId}`)
+    setNotice(null)
+
+    try {
+      const result = await archiveMerchantGroup(groupId)
+      if (!result.ok) {
+        setNotice({ tone: 'error', text: result.error })
+        return
+      }
+
+      onGroupArchive(groupId)
+      setNotice({ tone: 'success', text: '商家分類已封存。' })
+    } finally {
+      setPendingKey(null)
+    }
+  }
+
+  async function handleMerchantGroupChange(merchantId: string, nextGroupId: string) {
+    setPendingKey(`merchant-${merchantId}`)
+    setNotice(null)
+
+    try {
+      const result = await updateMerchantGroup({
+        merchantId,
+        groupId: nextGroupId === '__unassigned__' ? null : nextGroupId,
+      })
+      if (!result.ok) {
+        setNotice({ tone: 'error', text: result.error })
+        return
+      }
+
+      onMerchantUpsert(result.merchant)
+      setNotice({ tone: 'success', text: '商家分類已更新。' })
+    } finally {
+      setPendingKey(null)
+    }
+  }
+
+  async function handleMerchantRename() {
+    if (!editingMerchantId) return
+
+    const normalizedName = editingMerchantName.trim()
+    if (!normalizedName) {
+      setNotice({ tone: 'error', text: '商家名稱不能空白。' })
+      return
+    }
+
+    const currentMerchant = merchants.find((item) => item.id === editingMerchantId) ?? null
+
+    setPendingKey(`rename-merchant-${editingMerchantId}`)
+    setNotice(null)
+
+    try {
+      const result = await updateMerchant({
+        merchantId: editingMerchantId,
+        name: normalizedName,
+        groupId: currentMerchant?.group_id ?? null,
+      })
+      if (!result.ok) {
+        setNotice({ tone: 'error', text: result.error })
+        return
+      }
+
+      onMerchantUpsert(result.merchant, currentMerchant?.name)
+      setEditingMerchantId(null)
+      setEditingMerchantName('')
+      setNotice({ tone: 'success', text: '商家已更新。' })
+    } finally {
+      setPendingKey(null)
+    }
+  }
+
+  const groupAssignmentOptions = [
+    { value: '__unassigned__', label: '未分類' },
+    ...groups.map((group) => ({ value: group.id, label: group.name })),
+  ]
+
+  function focusMerchantComposer(groupId?: string) {
+    if (typeof groupId === 'string') {
+      setNewMerchantGroupId(groupId)
+    }
+    requestAnimationFrame(() => {
+      merchantNameInputRef.current?.focus()
+    })
+  }
+
+  function renderMerchantRow(merchantItem: FamilyMerchant) {
+    const isMerchantEditing = editingMerchantId === merchantItem.id
+    const pendingMerchantKey = pendingKey === `rename-merchant-${merchantItem.id}`
+    const merchantGroupName = merchantItem.group_id
+      ? groups.find((group) => group.id === merchantItem.group_id)?.name ?? '未分類'
+      : '未分類'
+
+    return (
+      <div
+        key={merchantItem.id}
+        className="rounded-[1.15rem] border border-[#eee6d9] bg-[#fcfbf8] p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]"
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            {isMerchantEditing ? (
+              <input
+                type="text"
+                value={editingMerchantName}
+                onChange={(event) => setEditingMerchantName(event.target.value)}
+                onKeyDown={(event) => handleEnter(event, handleMerchantRename)}
+                className="w-full rounded-[1rem] border border-[#eadfce] bg-white px-3 py-2 text-sm font-black text-slate-950 outline-none"
+                aria-label="商家名稱"
+                autoFocus
+              />
+            ) : (
+              <div className="truncate text-[0.98rem] font-black text-slate-900">{merchantItem.name}</div>
+            )}
+
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-[#f4f1ea] px-2.5 py-1 text-[0.68rem] font-black text-slate-600">
+                {merchantGroupName}
+              </span>
+              {merchantItem.last_used_at ? (
+                <span className="text-xs font-bold text-slate-400">
+                  最近使用 {merchantItem.last_used_at.slice(0, 10)}
+                </span>
+              ) : null}
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+          <select
+            value={merchantItem.group_id ?? '__unassigned__'}
+            onChange={(event) => handleMerchantGroupChange(merchantItem.id, event.target.value)}
+            disabled={pendingKey === `merchant-${merchantItem.id}` || Boolean(pendingKey)}
+            className="min-w-0 rounded-[0.95rem] border border-[#e7dccb] bg-white px-3 py-2.5 text-sm font-black text-slate-700 outline-none disabled:opacity-50"
+            aria-label={`設定 ${merchantItem.name} 的商家分類`}
+          >
+            {groupAssignmentOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+          {isMerchantEditing ? (
+            <div className="flex shrink-0 items-center gap-1.5">
+              <button
+                type="button"
+                onClick={handleMerchantRename}
+                disabled={pendingMerchantKey || Boolean(pendingKey)}
+                className="rounded-full bg-slate-950 px-3 py-2 text-xs font-black text-white disabled:opacity-50"
+              >
+                儲存
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingMerchantId(null)
+                  setEditingMerchantName('')
+                }}
+                disabled={Boolean(pendingKey)}
+                className="rounded-full bg-white px-3 py-2 text-xs font-black text-slate-500 disabled:opacity-50"
+              >
+                取消
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              onClick={() => startMerchantEditing(merchantItem)}
+              disabled={Boolean(pendingKey)}
+              className="rounded-full bg-white px-3 py-2 text-xs font-black text-slate-600 disabled:opacity-50"
+            >
+              修改
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  function startEditing(group: FamilyMerchantGroup) {
+    setEditingId(group.id)
+    setEditingName(group.name)
+    setNotice(null)
+  }
+
+  function startMerchantEditing(merchant: FamilyMerchant) {
+    setEditingMerchantId(merchant.id)
+    setEditingMerchantName(merchant.name)
+    setNotice(null)
+  }
+
+  if (typeof document === 'undefined') return null
+
+  return createPortal(
+    <div
+      className={`fixed inset-0 z-[80] transition ${open ? 'pointer-events-auto' : 'pointer-events-none'}`}
+      aria-hidden={!open}
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        className={`absolute inset-0 bg-[rgba(15,23,42,0.34)] backdrop-blur-[2px] transition ${
+          open ? 'opacity-100' : 'opacity-0'
+        }`}
+        aria-label="關閉商家分類設定"
+      />
+
+      <div
+        className={`absolute inset-x-0 bottom-0 top-4 transition-transform duration-300 ${
+          open ? 'translate-y-0' : 'translate-y-full'
+        }`}
+      >
+        <div className="mx-auto flex h-full w-full max-w-md flex-col overflow-hidden rounded-t-[2.35rem] border border-white/70 bg-[#faf7f0] shadow-[0_-28px_70px_rgba(15,23,42,0.22)]">
+          <header className="shrink-0 border-b border-[#eee5d8] bg-white px-4 pt-[calc(0.9rem+env(safe-area-inset-top))] pb-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="inline-flex items-center gap-2 rounded-full bg-[#f4f1ea] px-3 py-1 text-[0.68rem] font-black tracking-[0.18em] text-slate-600">
+                商家設定
+              </div>
+              <button
+                type="button"
+                onClick={onClose}
+                className="rounded-full bg-[#f4f1ea] p-2 text-2xl leading-none text-slate-600 transition active:scale-[0.96]"
+                aria-label="關閉商家分類設定"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="mt-4">
+              <div className="text-[1.55rem] font-black leading-[1.05] tracking-[-0.04em] text-slate-950">
+                管理商家與分類
+              </div>
+              <div className="mt-1 text-sm text-slate-500">
+                先整理商家分類，再回去選商家。
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-3 gap-2">
+              <div className="rounded-[1.15rem] border border-[#eee5d8] bg-[#fcfbf8] px-3 py-3">
+                <div className="text-[0.65rem] font-black tracking-[0.16em] text-slate-400">分類</div>
+                <div className="mt-1 text-lg font-black text-slate-900">{groups.length}</div>
+              </div>
+              <div className="rounded-[1.15rem] border border-[#eee5d8] bg-[#fcfbf8] px-3 py-3">
+                <div className="text-[0.65rem] font-black tracking-[0.16em] text-slate-400">商家</div>
+                <div className="mt-1 text-lg font-black text-slate-900">{merchants.length}</div>
+              </div>
+              <div className="rounded-[1.15rem] border border-[#eee5d8] bg-[#fcfbf8] px-3 py-3">
+                <div className="text-[0.65rem] font-black tracking-[0.16em] text-slate-400">未分類</div>
+                <div className="mt-1 text-lg font-black text-slate-900">{unassignedMerchantCount}</div>
+              </div>
+            </div>
+
+            <div className="mt-3 grid grid-cols-2 gap-2 rounded-[1.25rem] bg-[#f4f1ea] p-1">
+              {[
+                { id: 'merchants' as const, label: '商家' },
+                { id: 'groups' as const, label: '分類' },
+              ].map((item) => {
+                const isActive = managerView === item.id
+
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      setManagerView(item.id)
+                      setNotice(null)
+                    }}
+                    className={`rounded-[1rem] px-3 py-2 text-sm font-black transition ${
+                      isActive
+                        ? 'bg-white text-slate-950 shadow-[0_8px_18px_rgba(15,23,42,0.08)]'
+                        : 'text-slate-500'
+                    }`}
+                    aria-pressed={isActive}
+                  >
+                    {item.label}
+                  </button>
+                )
+              })}
+            </div>
+          </header>
+
+          <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto bg-[#faf7f0] pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
+            {notice ? (
+              <div className="px-4 pt-4">
+                <div
+                  className={`rounded-[1.1rem] px-4 py-3 text-sm font-black shadow-[0_12px_24px_rgba(15,23,42,0.06)] ${
+                    notice.tone === 'success'
+                      ? 'bg-[#ebfff7] text-[#187d5f]'
+                      : 'bg-[#fff3f2] text-[#c2413a]'
+                  }`}
+                >
+                  {notice.text}
+                </div>
+              </div>
+            ) : null}
+
+            <div className="space-y-4 px-4 py-4">
+              <section className="grid gap-3">
+                {managerView === 'merchants' ? (
+                <div className="overflow-hidden rounded-[1.7rem] border border-[#eee5d8] bg-white shadow-[0_14px_32px_rgba(15,23,42,0.06)]">
+                  <div className="flex items-center justify-between border-b border-[#f2ece2] px-4 py-3">
+                    <div>
+                      <div className="text-sm font-black text-slate-900">快速新增商家</div>
+                      <div className="mt-0.5 text-xs font-semibold text-slate-400">
+                        可以直接留在未分類，也可以先選好分類。
+                      </div>
+                    </div>
+                    <span className="rounded-full bg-[#ecfdf8] px-2.5 py-1 text-[0.68rem] font-black text-[#15957d]">
+                      Quick add
+                    </span>
+                  </div>
+                  <div className="space-y-3 px-4 py-4">
+                    <input
+                      ref={merchantNameInputRef}
+                      type="text"
+                      value={newMerchantName}
+                      onChange={(event) => setNewMerchantName(event.target.value)}
+                      onKeyDown={(event) => handleEnter(event, handleCreateMerchant)}
+                      placeholder="商家名稱"
+                      className="ios-search-input w-full rounded-[1rem] border border-[#eadfce] bg-[#fcfbf8] px-3 py-3 text-sm font-black text-slate-950 outline-none placeholder:text-slate-400"
+                      aria-label="新增商家名稱"
+                    />
+                    <div className="flex items-center gap-2">
+                        <select
+                        value={resolvedNewMerchantGroupId}
+                        onChange={(event) => setNewMerchantGroupId(event.target.value)}
+                        className="min-w-0 flex-1 rounded-[1rem] border border-[#eadfce] bg-[#fcfbf8] px-3 py-3 text-sm font-black text-slate-700 outline-none"
+                        aria-label="新增商家分類"
+                      >
+                        {merchantGroupOptions.map((option) => (
+                          <option key={option.value || '__empty'} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={handleCreateMerchant}
+                        disabled={pendingKey === 'create-merchant'}
+                        className="shrink-0 rounded-full bg-slate-950 px-4 py-3 text-sm font-black text-white disabled:opacity-50"
+                      >
+                        新增
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                ) : null}
+
+                {managerView === 'groups' ? (
+                <div className="overflow-hidden rounded-[1.7rem] border border-[#eee5d8] bg-white shadow-[0_14px_32px_rgba(15,23,42,0.06)]">
+                  <div className="flex items-center justify-between border-b border-[#f2ece2] px-4 py-3">
+                    <div>
+                      <div className="text-sm font-black text-slate-900">快速新增分類</div>
+                      <div className="mt-0.5 text-xs font-semibold text-slate-400">
+                        分類先建好，之後商家就能直接掛上去。
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-3 px-4 py-4">
+                    <input
+                      type="text"
+                      value={rootName}
+                      onChange={(event) => setRootName(event.target.value)}
+                      onKeyDown={(event) => handleEnter(event, () => handleCreate(rootName))}
+                      placeholder="分類名稱"
+                      className="ios-search-input w-full rounded-[1rem] border border-[#eadfce] bg-[#fcfbf8] px-3 py-3 text-sm font-black text-slate-950 outline-none placeholder:text-slate-400"
+                      aria-label="新增商家分類"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleCreate(rootName)}
+                      disabled={pendingKey === 'create-group'}
+                      className="w-full rounded-[1rem] bg-[#f6d36a] px-4 py-3 text-sm font-black text-slate-950 shadow-[0_14px_28px_rgba(246,211,106,0.28)] disabled:opacity-50"
+                    >
+                      新增分類
+                    </button>
+                  </div>
+                </div>
+                ) : null}
+              </section>
+
+              <section className="overflow-hidden rounded-[1.7rem] border border-[#eee5d8] bg-white shadow-[0_14px_32px_rgba(15,23,42,0.06)]">
+                <div className="flex items-center justify-between border-b border-[#f2ece2] px-4 py-3">
+                  <div>
+                    <div className="text-sm font-black text-slate-900">搜尋</div>
+                    <div className="mt-0.5 text-xs font-semibold text-slate-400">
+                      找分類或商家，下面會直接縮成命中的內容。
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-sm font-black text-slate-900">
+                      {filteredGroups.length + (filteredUnassignedMerchants.length > 0 ? 1 : 0)} 區塊
+                    </div>
+                    <div className="mt-0.5 text-xs font-semibold text-slate-400">命中結果</div>
+                  </div>
+                </div>
+                <div className="px-4 py-4">
+                  <label className="flex min-h-11 items-center gap-2 rounded-full bg-[#f3f3f2] px-4">
+                    <span className="text-lg text-slate-400" aria-hidden="true">
+                      ⌕
+                    </span>
+                    <input
+                      type="text"
+                      value={query}
+                      onChange={(event) => setQuery(event.target.value)}
+                      placeholder="搜尋分類、商家"
+                      className="ios-search-input min-w-0 flex-1 bg-transparent text-center font-black text-slate-700 outline-none placeholder:text-slate-400"
+                      aria-label="快速搜尋商家分類"
+                    />
+                    {query ? (
+                      <button
+                        type="button"
+                        onClick={() => setQuery('')}
+                        aria-label="清除搜尋"
+                        className="flex h-6 w-6 items-center justify-center rounded-full text-base text-[#a0a4a8] hover:bg-[#eeebe4] hover:text-[#3a3d42]"
+                      >
+                        ×
+                      </button>
+                    ) : null}
+                  </label>
+                </div>
+              </section>
+
+              {managerView === 'merchants' && recentMerchants.length > 0 ? (
+                <section className="overflow-hidden rounded-[1.7rem] border border-[#eee5d8] bg-white shadow-[0_14px_32px_rgba(15,23,42,0.06)]">
+                  <div className="flex items-center justify-between border-b border-[#f2ece2] px-4 py-3">
+                    <div>
+                      <div className="text-sm font-black text-slate-900">最近使用</div>
+                      <div className="mt-0.5 text-xs font-semibold text-slate-400">點一下可直接帶回上方快速新增</div>
+                    </div>
+                  </div>
+                  <div className="no-scrollbar flex gap-2 overflow-x-auto px-4 py-4">
+                    {recentMerchants.map((merchantItem) => (
+                      <button
+                        key={merchantItem.id}
+                        type="button"
+                        onClick={() => {
+                          setNewMerchantName(merchantItem.name)
+                          setNewMerchantGroupId(merchantItem.group_id ?? '')
+                          setNotice(null)
+                          focusMerchantComposer(merchantItem.group_id ?? undefined)
+                        }}
+                        className="shrink-0 rounded-full border border-[#eadfce] bg-[#fcfbf8] px-4 py-2 text-left text-sm font-black text-slate-700 transition active:scale-[0.98]"
+                      >
+                        {merchantItem.name}
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+
+              {managerView === 'merchants' && (filteredUnassignedMerchants.length > 0 || (!normalizedQuery && unassignedMerchantCount > 0)) ? (
+                <section className="overflow-hidden rounded-[1.7rem] border border-[#eee5d8] bg-white shadow-[0_14px_32px_rgba(15,23,42,0.06)]">
+                  <div className="flex items-center justify-between border-b border-[#f2ece2] px-4 py-3">
+                    <div>
+                      <div className="text-sm font-black text-slate-900">未分類</div>
+                      <div className="mt-0.5 text-xs font-semibold text-slate-400">還沒分組的商家先放這裡</div>
+                    </div>
+                    <div className="rounded-full bg-[#f8f5ef] px-3 py-1 text-xs font-black text-slate-600">
+                      {normalizedQuery ? filteredUnassignedMerchants.length : unassignedMerchantCount} 項
+                    </div>
+                  </div>
+                  <div className="space-y-2 px-3 py-3">
+                    {(normalizedQuery ? filteredUnassignedMerchants : merchantsByGroupId.unassigned).length > 0 ? (
+                      (normalizedQuery ? filteredUnassignedMerchants : merchantsByGroupId.unassigned).map((merchantItem) =>
+                        renderMerchantRow(merchantItem),
+                      )
+                    ) : (
+                      <div className="rounded-[1.25rem] border border-dashed border-[#e3d9c6] bg-[#fcfbf8] px-4 py-8 text-center text-sm font-bold text-slate-400">
+                        這裡目前沒有商家
+                      </div>
+                    )}
+                  </div>
+                </section>
+              ) : null}
+
+              {filteredGroups.length > 0 ? (
+                filteredGroups.map((group) => {
+                  const isEditing = editingId === group.id
+                  const isPending = pendingKey === `rename-${group.id}` || pendingKey === `archive-${group.id}`
+                  const totalMerchantCount = merchantCountByGroupId.get(group.id) ?? 0
+                  const allMerchantsInGroup = merchantsByGroupId.grouped.get(group.id) ?? []
+                  const groupNameMatches = normalizedQuery
+                    ? group.name.toLocaleLowerCase('zh-TW').includes(normalizedQuery)
+                    : false
+                  const visibleMerchants = !normalizedQuery || groupNameMatches
+                    ? allMerchantsInGroup
+                    : allMerchantsInGroup.filter((merchantItem) =>
+                        merchantItem.name.toLocaleLowerCase('zh-TW').includes(normalizedQuery),
+                      )
+
+                  return (
+                    <section key={group.id} className="overflow-hidden rounded-[1.7rem] border border-[#eee5d8] bg-white shadow-[0_14px_32px_rgba(15,23,42,0.06)]">
+                      <div className="flex items-start justify-between gap-3 border-b border-[#f2ece2] px-4 py-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-black text-slate-900">
+                            {isEditing ? (
+                              <input
+                                type="text"
+                                value={editingName}
+                                onChange={(event) => setEditingName(event.target.value)}
+                                onKeyDown={(event) => handleEnter(event, handleRename)}
+                                className="w-full rounded-[1rem] border border-[#eadfce] bg-[#fcfbf8] px-3 py-2 text-sm font-black text-slate-950 outline-none"
+                                aria-label="商家分類名稱"
+                                autoFocus
+                              />
+                            ) : (
+                              group.name
+                            )}
+                          </div>
+                          <div className="mt-0.5 text-xs font-semibold text-slate-400">
+                            {group.name} · {visibleMerchants.length} / {totalMerchantCount} 個商家
+                          </div>
+                        </div>
+
+                        <div className="flex shrink-0 items-center gap-1.5">
+                          {managerView === 'merchants' ? (
+                            <button
+                            type="button"
+                            onClick={() => focusMerchantComposer(group.id)}
+                            disabled={Boolean(pendingKey)}
+                            className="rounded-full bg-[#ecfdf8] px-3 py-2 text-xs font-black text-[#187d5f] disabled:opacity-50"
+                          >
+                            新增到此分類
+                          </button>
+                          ) : null}
+                          {isEditing ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={handleRename}
+                                disabled={Boolean(pendingKey)}
+                                className="rounded-full bg-slate-950 px-3 py-2 text-xs font-black text-white disabled:opacity-50"
+                              >
+                                儲存
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingId(null)
+                                  setEditingName('')
+                                }}
+                                disabled={Boolean(pendingKey)}
+                                className="rounded-full bg-[#f4f1ea] px-3 py-2 text-xs font-black text-slate-500 disabled:opacity-50"
+                              >
+                                取消
+                              </button>
+                            </>
+                          ) : (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => startEditing(group)}
+                                disabled={Boolean(pendingKey)}
+                                className="rounded-full bg-[#f4f1ea] px-3 py-2 text-xs font-black text-slate-600 disabled:opacity-50"
+                              >
+                                修改
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleArchive(group.id)}
+                                disabled={isPending || Boolean(pendingKey)}
+                                className="rounded-full bg-[#fff1ee] px-3 py-2 text-xs font-black text-[#c9563f] disabled:opacity-50"
+                              >
+                                封存
+                              </button>
+                            </>
+                          )}
+                        </div>
+                      </div>
+
+                      {managerView === 'merchants' ? (
+                      <div className="space-y-2 px-3 py-3">
+                        {visibleMerchants.length > 0 ? (
+                          visibleMerchants.map((merchantItem) => renderMerchantRow(merchantItem))
+                        ) : (
+                          <div className="rounded-[1.25rem] border border-dashed border-[#e3d9c6] bg-[#fcfbf8] px-4 py-8 text-center text-sm font-bold text-slate-400">
+                            這個分類目前沒有符合搜尋的商家
+                          </div>
+                        )}
+                      </div>
+                      ) : null}
+                    </section>
+                  )
+                })
+              ) : (
+                <div className="rounded-[1.7rem] border border-dashed border-[#e3d9c6] bg-white px-4 py-10 text-center text-sm font-bold text-slate-400">
+                  沒有符合搜尋的分類
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="shrink-0 border-t border-[#eee5d8] bg-[#faf7f0] px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+            <button
+              type="button"
+              onClick={onClose}
+              className="w-full rounded-[1.15rem] bg-slate-950 px-4 py-3 text-sm font-black text-white shadow-[0_14px_28px_rgba(15,23,42,0.16)] transition active:scale-[0.98]"
+              aria-label="關閉商家設定"
+            >
+              完成並返回
+            </button>
+            </div>
+          </div>
+        </div>
+    </div>,
+    document.body,
   )
+}
+
+export function TransactionForm({
+  accounts,
+  categories,
+  merchants,
+  merchantGroups,
+  initialPreset,
+  rateTable = null,
+  mode = 'create',
+  transaction = null,
+}: Props) {
+  const isEditMode = mode === 'edit' && transaction != null
+  const initialKind = (isEditMode ? transaction.kind : 'expense') as Kind
+  const initialCategorySelection =
+    initialKind === 'reminder'
+      ? { parentId: '', categoryId: '' }
+      : resolveCategorySelection(
+          buildCategoryPickerGroups(categories, initialKind),
+          isEditMode ? transaction.category_id : initialPreset?.categoryId,
+        )
   const formRef = useRef<HTMLFormElement>(null)
   const kindCarouselRef = useRef<HTMLDivElement>(null)
   const swipeSyncTimeoutRef = useRef<number | null>(null)
+  const skipNextAmountClickRef = useRef(false)
+  const router = useRouter()
   const [kind, setKind] = useState<Kind>(initialKind)
   const [pending, setPending] = useState(false)
-  const [amount, setAmount] = useState('')
-  const [isKeypadVisible, setIsKeypadVisible] = useState(false)
+  const [amount, setAmount] = useState(isEditMode ? String(Number(transaction.amount)) : '')
+  const [isKeypadVisible, setIsKeypadVisible] = useState(true)
   const [isCategoryPickerOpen, setIsCategoryPickerOpen] = useState(false)
+  const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false)
   const [isMerchantPickerOpen, setIsMerchantPickerOpen] = useState(false)
-  const [currency, setCurrency] = useState<Currency>(isCurrency(initialPreset?.currency) ? initialPreset.currency : 'TWD')
-  const [categoryId, setCategoryId] = useState(initialCategorySelection.categoryId)
-  const [accountId, setAccountId] = useState(initialPreset?.accountId ?? '')
-  const [toAccountId, setToAccountId] = useState(initialPreset?.toAccountId ?? '')
-  const [merchant, setMerchant] = useState('')
-  const [occurredAt, setOccurredAt] = useState(currentLocalDateTimeValue)
-  const [owner, setOwner] = useState<Owner>(isOwner(initialPreset?.owner) ? initialPreset.owner : 'Oscar')
-  const [note, setNote] = useState('')
-  const [message, setMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
+  const [isMerchantManagerOpen, setIsMerchantManagerOpen] = useState(false)
+  const [isKindDragging, setIsKindDragging] = useState(false)
+  const [managedCategories, setManagedCategories] = useState(() => categories)
+  const [managedMerchants, setManagedMerchants] = useState(() => merchants)
+  const [managedMerchantGroups, setManagedMerchantGroups] = useState(() => merchantGroups)
+  const [currency, setCurrency] = useState<Currency>(() => {
+    const fallbackCurrency = isCurrency(isEditMode ? transaction.currency : initialPreset?.currency)
+      ? (isEditMode ? transaction.currency : initialPreset?.currency) as Currency
+      : 'TWD'
 
-  const categoryGroups = buildCategoryPickerGroups(categories, kind)
+    if (initialKind === 'transfer') {
+      const initialSourceId = isEditMode ? transaction.account_id ?? '' : initialPreset?.accountId ?? ''
+      const initialSourceAccount = accounts.find((account) => account.id === initialSourceId)
+      if (initialSourceAccount && isCurrency(initialSourceAccount.currency)) {
+        return initialSourceAccount.currency as Currency
+      }
+    }
+
+    return fallbackCurrency
+  })
+  const [categoryId, setCategoryId] = useState(initialCategorySelection.categoryId)
+  const [accountId, setAccountId] = useState(isEditMode ? transaction.account_id ?? '' : initialPreset?.accountId ?? '')
+  const [toAccountId, setToAccountId] = useState(isEditMode ? transaction.to_account_id ?? '' : initialPreset?.toAccountId ?? '')
+  const [merchant, setMerchant] = useState(isEditMode ? transaction.merchant ?? '' : '')
+  const [occurredAt, setOccurredAt] = useState(isEditMode ? toLocalDateTimeValue(transaction.occurred_at ?? transaction.created_at) : currentLocalDateTimeValue)
+  const [reminderTitle, setReminderTitle] = useState(isEditMode ? transaction.title ?? '' : '')
+  const [reminderFrequency, setReminderFrequency] = useState<ReminderFrequency>('quarterly')
+  const [reminderDueOn, setReminderDueOn] = useState(currentLocalDateValue)
+  const [owner, setOwner] = useState<Owner>(
+    isOwner(isEditMode ? transaction.owner : initialPreset?.owner)
+      ? (isEditMode ? transaction.owner : initialPreset?.owner) as Owner
+      : 'Oscar',
+  )
+  const [note, setNote] = useState(isEditMode ? transaction.note ?? '' : '')
+  const [message, setMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
+  const availableKinds = useMemo(
+    () => (isEditMode ? KINDS.filter((item) => item !== 'reminder') : KINDS),
+    [isEditMode],
+  )
+
+  const categoryGroupsByKind = useMemo<Record<Kind, CategoryPickerGroup[]>>(() => ({
+    expense: buildCategoryPickerGroups(managedCategories, 'expense'),
+    income: buildCategoryPickerGroups(managedCategories, 'income'),
+    transfer: buildCategoryPickerGroups(managedCategories, 'transfer'),
+    reminder: [],
+  }), [managedCategories])
+  const categoryById = useMemo(
+    () => new Map(managedCategories.map((category) => [category.id, category])),
+    [managedCategories],
+  )
+  const categoryPathById = useMemo(() => {
+    const paths = new Map<string, string>()
+
+    for (const category of managedCategories) {
+      if (!category.parent_id) {
+        paths.set(category.id, category.name)
+        continue
+      }
+
+      const parent = categoryById.get(category.parent_id)
+      paths.set(category.id, parent ? `${parent.name} › ${category.name}` : category.name)
+    }
+
+    return paths
+  }, [categoryById, managedCategories])
+  const accountById = useMemo(
+    () => new Map(accounts.map((account) => [account.id, account])),
+    [accounts],
+  )
+  const accountOptions = useMemo(
+    () => buildAccountOptions(accounts),
+    [accounts],
+  )
+  const reminderAccounts = useMemo(
+    () => accounts.filter((account) => account.type === '房地產' || account.type === '車輛'),
+    [accounts],
+  )
+  const reminderAccountOptions = useMemo(
+    () => buildReminderAccountOptions(reminderAccounts),
+    [reminderAccounts],
+  )
+  const kindDragStateRef = useRef<{
+    active: boolean
+    pointerId: number | null
+    startX: number
+    startScrollLeft: number
+  } | null>(null)
+
+  const categoryGroups = categoryGroupsByKind[kind]
+  const transactionKind: TransactionKind = kind === 'reminder' ? 'expense' : kind
   const resolvedCategorySelection = resolveCategorySelection(categoryGroups, categoryId)
   const resolvedParentId = resolvedCategorySelection.parentId
   const resolvedCategoryId = resolvedCategorySelection.categoryId
-  const resolvedAccountId = accounts.some((account) => account.id === accountId) ? accountId : ''
-  const resolvedToAccountId = accounts.some((account) => account.id === toAccountId) ? toAccountId : ''
-  const selectedCategory = categories.find((category) => category.id === resolvedCategoryId) ?? null
-  const selectedAccount = accounts.find((account) => account.id === resolvedAccountId) ?? null
-  const selectedToAccount = accounts.find((account) => account.id === resolvedToAccountId) ?? null
-  const merchantQuery = merchant.trim().toLocaleLowerCase('zh-TW')
-  const merchantSuggestions = merchants
-    .filter((item) => {
-      if (!merchantQuery) return true
-      return item.name.toLocaleLowerCase('zh-TW').includes(merchantQuery)
-    })
-    .filter((item) => item.name !== merchant.trim())
-    .slice(0, merchantQuery ? 6 : 8)
+  const resolvedAccountId = accountById.has(accountId) ? accountId : ''
+  const resolvedToAccountId = accountById.has(toAccountId) ? toAccountId : ''
+  const selectedCategory = categoryById.get(resolvedCategoryId) ?? null
+  const selectedAccount = accountById.get(resolvedAccountId) ?? null
+  const selectedToAccount = accountById.get(resolvedToAccountId) ?? null
+  const resolvedReminderAccountId = reminderAccounts.some((account) => account.id === accountId) ? accountId : ''
+  const selectedReminderAccount = accountById.get(resolvedReminderAccountId) ?? null
   const amountValue = parseAmount(amount)
-  const canSubmit = amountValue > 0 && Boolean(resolvedAccountId) && (kind !== 'transfer' || Boolean(resolvedToAccountId))
+  const transferSnapshot = useMemo(() => {
+    if (!rateTable) return null
+    return getRateSnapshotForDate(rateTable, (occurredAt || currentLocalDateTimeValue()).slice(0, 10))
+  }, [occurredAt, rateTable])
+  const transferPreview = useMemo(() => {
+    if (kind !== 'transfer' || !selectedAccount || !selectedToAccount || amountValue <= 0) return null
+
+    const sourceCurrency = selectedAccount.currency || currency
+    const targetCurrency = selectedToAccount.currency || currency
+    const sourceAmount = parseFloat(amountValue.toFixed(2))
+
+    if (sourceCurrency === targetCurrency) {
+      return {
+        sourceAmount,
+        sourceCurrency,
+        targetAmount: sourceAmount,
+        targetCurrency,
+        isCrossCurrency: false,
+      }
+    }
+
+    if (!transferSnapshot) return null
+
+    const converted = convertBetweenCurrencies(sourceAmount, sourceCurrency, targetCurrency, transferSnapshot)
+    if (converted == null) return null
+
+    return {
+      sourceAmount,
+      sourceCurrency,
+      targetAmount: parseFloat(converted.toFixed(2)),
+      targetCurrency,
+      isCrossCurrency: true,
+    }
+  }, [amountValue, currency, kind, selectedAccount, selectedToAccount, transferSnapshot])
+  const canSubmit =
+    kind === 'reminder'
+      ? Boolean(reminderTitle.trim()) && Boolean(resolvedReminderAccountId) && Boolean(reminderDueOn)
+      : amountValue > 0 && Boolean(resolvedAccountId) && (kind !== 'transfer' || Boolean(resolvedToAccountId))
+  const showKeypad = isKeypadVisible && kind !== 'reminder'
 
   useEffect(() => {
     const container = kindCarouselRef.current
     if (!container) return
 
-    const index = KINDS.indexOf(kind)
+    const index = availableKinds.indexOf(kind)
     const card = container.children.item(index) as HTMLElement | null
     if (!card) return
 
     const targetLeft = card.offsetLeft
     if (Math.abs(container.scrollLeft - targetLeft) < 4) return
     container.scrollTo({ left: targetLeft, behavior: 'smooth' })
-  }, [kind])
+  }, [availableKinds, kind])
 
   useEffect(() => {
     return () => {
@@ -909,7 +2583,7 @@ export function TransactionForm({ accounts, categories, merchants, initialPreset
   }, [])
 
   useEffect(() => {
-    if (!isCategoryPickerOpen && !isMerchantPickerOpen) return
+    if (!isCategoryPickerOpen && !isCategoryManagerOpen && !isMerchantPickerOpen && !isMerchantManagerOpen) return
 
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -917,41 +2591,128 @@ export function TransactionForm({ accounts, categories, merchants, initialPreset
     return () => {
       document.body.style.overflow = previousOverflow
     }
-  }, [isCategoryPickerOpen, isMerchantPickerOpen])
+  }, [isCategoryPickerOpen, isCategoryManagerOpen, isMerchantPickerOpen, isMerchantManagerOpen])
 
   async function handleSubmit(formData: FormData) {
     if (!canSubmit) return
 
-    setMessage(null)
-    formData.set('amount', String(amountValue))
-    formData.set('kind', kind)
-    formData.set('currency', currency)
-    formData.set('category_id', resolvedCategoryId)
-    formData.set('account_id', resolvedAccountId)
-    formData.set('to_account_id', kind === 'transfer' ? resolvedToAccountId : '')
-    formData.set('merchant', merchant)
-    formData.set('occurred_at', occurredAt)
-    formData.set('owner', owner)
-    formData.set('note', note)
-    if (selectedCategory) formData.set('category_name', selectedCategory.name)
+    const submitMode = !isEditMode && formData.get('submitMode') === 'stay' ? 'stay' : 'ledger'
+    const transferTargetAmount =
+      transferPreview?.targetAmount ?? transaction?.transfer_target_amount ?? null
+    const transferTargetCurrency =
+      transferPreview?.targetCurrency ?? transaction?.transfer_target_currency ?? null
 
+    setMessage(null)
     setPending(true)
     try {
-      const result = await createTransaction(formData)
+      const result = kind === 'reminder'
+        ? await createMaintenanceReminder(
+            (() => {
+              const reminderData = new FormData()
+              reminderData.set('name', reminderTitle.trim())
+              reminderData.set('account_id', resolvedReminderAccountId)
+              reminderData.set('frequency', reminderFrequency)
+              reminderData.set('due_on', reminderDueOn)
+              reminderData.set('detail', note)
+              return reminderData
+            })(),
+          )
+        : isEditMode
+          ? await updateTransaction(transaction.id, (() => {
+              formData.set('amount', String(amountValue))
+              formData.set('kind', kind)
+              formData.set('currency', currency)
+              formData.set('category_id', resolvedCategoryId)
+              formData.set('account_id', resolvedAccountId)
+              formData.set('to_account_id', kind === 'transfer' ? resolvedToAccountId : '')
+              formData.set(
+                'transfer_target_amount',
+                kind === 'transfer' && transferTargetAmount != null ? String(transferTargetAmount) : '',
+              )
+              formData.set(
+                'transfer_target_currency',
+                kind === 'transfer' && transferTargetCurrency ? transferTargetCurrency : '',
+              )
+              formData.set('merchant', merchant)
+              formData.set('occurred_at', occurredAt)
+              formData.set('owner', owner)
+              formData.set('note', note)
+              if (selectedCategory) formData.set('category_name', selectedCategory.name)
+              return formData
+            })())
+          : await createTransaction((() => {
+              formData.set('amount', String(amountValue))
+              formData.set('kind', kind)
+              formData.set('currency', currency)
+              formData.set('category_id', resolvedCategoryId)
+              formData.set('account_id', resolvedAccountId)
+              formData.set('to_account_id', kind === 'transfer' ? resolvedToAccountId : '')
+              formData.set(
+                'transfer_target_amount',
+                kind === 'transfer' && transferTargetAmount != null ? String(transferTargetAmount) : '',
+              )
+              formData.set(
+                'transfer_target_currency',
+                kind === 'transfer' && transferTargetCurrency ? transferTargetCurrency : '',
+              )
+              formData.set('merchant', merchant)
+              formData.set('occurred_at', occurredAt)
+              formData.set('owner', owner)
+              formData.set('note', note)
+              if (selectedCategory) formData.set('category_name', selectedCategory.name)
+              return formData
+            })())
       if (!result.ok) {
         setMessage({ tone: 'error', text: result.error })
         return
       }
 
-      setAmount('')
-      setMerchant('')
-      setNote('')
-      setOccurredAt(currentLocalDateTimeValue())
-      setMessage({ tone: 'success', text: '已儲存，沿用上一筆的分類、帳戶、成員與幣別。' })
+      if (kind === 'reminder') {
+        setReminderTitle('')
+        setNote('')
+        if (submitMode !== 'stay') {
+          setReminderDueOn(currentLocalDateValue())
+        }
+        setMessage({ tone: 'success', text: '提醒已儲存。' })
+        router.refresh()
+        return
+      }
+
+      if (submitMode === 'stay') {
+        setAmount('')
+        setMerchant('')
+        setNote('')
+        setOccurredAt(currentLocalDateTimeValue())
+        setIsKeypadVisible(true)
+        setMessage({ tone: 'success', text: '已儲存，可以繼續記下一筆。' })
+        router.refresh()
+        return
+      }
+
+      router.push(ledgerHrefForOccurredAt(occurredAt))
     } catch (error) {
       setMessage({
         tone: 'error',
-        text: error instanceof Error ? error.message : '新增失敗，請稍後再試。',
+        text: error instanceof Error ? error.message : `${isEditMode ? '更新' : '新增'}失敗，請稍後再試。`,
+      })
+    } finally {
+      setPending(false)
+    }
+  }
+
+  async function handleDelete() {
+    if (!isEditMode) return
+    if (!window.confirm('確定要刪除這筆交易嗎？帳戶餘額也會一起沖回。')) return
+
+    setPending(true)
+    setMessage(null)
+    try {
+      await deleteTransaction(transaction.id)
+      router.push(ledgerHrefForOccurredAt(occurredAt))
+    } catch (error) {
+      setMessage({
+        tone: 'error',
+        text: error instanceof Error ? error.message : '刪除失敗，請稍後再試。',
       })
     } finally {
       setPending(false)
@@ -960,14 +2721,31 @@ export function TransactionForm({ accounts, categories, merchants, initialPreset
 
   function updateKind(nextKind: Kind) {
     if (nextKind === kind) return
+    if (isEditMode && nextKind === 'reminder') return
+    setIsCategoryPickerOpen(false)
+    setIsCategoryManagerOpen(false)
+    setIsMerchantPickerOpen(false)
+    setIsMerchantManagerOpen(false)
+    setKind(nextKind)
+    if (nextKind === 'reminder') {
+      setIsKeypadVisible(false)
+      return
+    }
+
     const nextCategorySelection = resolveCategorySelection(
-      buildCategoryPickerGroups(categories, nextKind),
+      categoryGroupsByKind[nextKind],
       '',
     )
-    setKind(nextKind)
     setCategoryId(nextCategorySelection.categoryId)
+    setIsKeypadVisible(true)
     if (nextKind !== 'transfer') {
       setToAccountId('')
+      return
+    }
+
+    const nextSourceAccount = accountById.get(accountId)
+    if (nextSourceAccount && isCurrency(nextSourceAccount.currency)) {
+      setCurrency(nextSourceAccount.currency as Currency)
     }
   }
 
@@ -978,37 +2756,116 @@ export function TransactionForm({ accounts, categories, merchants, initialPreset
     setCategoryId(nextGroup.children[0]?.id ?? nextGroup.parent.id)
   }
 
+  function handleTransferSourceChange(value: string) {
+    setAccountId(value)
+    const nextAccount = accountById.get(value)
+    if (nextAccount && isCurrency(nextAccount.currency)) {
+      setCurrency(nextAccount.currency as Currency)
+    }
+  }
+
+  function handleTransferTargetChange(value: string) {
+    setToAccountId(value)
+  }
+
+  function swapTransferAccounts() {
+    const nextSourceAccount = accountById.get(toAccountId)
+    setAccountId(toAccountId)
+    setToAccountId(accountId)
+    if (nextSourceAccount && isCurrency(nextSourceAccount.currency)) {
+      setCurrency(nextSourceAccount.currency as Currency)
+    }
+  }
+
   function handleChildCategoryChange(nextCategoryId: string) {
     setCategoryId(nextCategoryId)
   }
 
-  function handleParentCategoryStep(direction: -1 | 1) {
-    const parentOptions = categoryGroups.map((group) => ({ id: group.parent.id, label: group.parent.name }))
-    const nextParentId = cycleOption(parentOptions, resolvedParentId, direction)
-    if (nextParentId) {
-      handleParentCategoryChange(nextParentId)
-    }
-  }
-
-  function handleChildCategoryStep(direction: -1 | 1) {
-    const selectedGroup = categoryGroups.find((group) => group.parent.id === resolvedParentId) ?? categoryGroups[0] ?? null
-    const childOptions = buildChildOptions(selectedGroup)
-    const nextCategoryId = cycleOption(childOptions, resolvedCategoryId, direction)
-    if (nextCategoryId) {
-      handleChildCategoryChange(nextCategoryId)
-    }
-  }
-
   function openCategoryPicker() {
-    setIsMerchantPickerOpen(false)
     setIsKeypadVisible(false)
+    setIsCategoryManagerOpen(false)
+    setIsMerchantPickerOpen(false)
+    setIsMerchantManagerOpen(false)
     setIsCategoryPickerOpen(true)
   }
 
-  function openMerchantPicker() {
-    setIsCategoryPickerOpen(false)
+  function openCategoryManager() {
     setIsKeypadVisible(false)
+    setIsCategoryPickerOpen(false)
+    setIsMerchantPickerOpen(false)
+    setIsMerchantManagerOpen(false)
+    setIsCategoryManagerOpen(true)
+  }
+
+  function openMerchantPicker() {
+    setIsKeypadVisible(false)
+    setIsCategoryPickerOpen(false)
+    setIsCategoryManagerOpen(false)
+    setIsMerchantManagerOpen(false)
     setIsMerchantPickerOpen(true)
+  }
+
+  function openMerchantManager() {
+    setIsKeypadVisible(false)
+    setIsCategoryPickerOpen(false)
+    setIsCategoryManagerOpen(false)
+    setIsMerchantManagerOpen(true)
+    setIsMerchantPickerOpen(false)
+  }
+
+  function handleCategoryUpsert(category: FamilyCategory) {
+    setManagedCategories((current) => {
+      const existingIndex = current.findIndex((item) => item.id === category.id)
+      if (existingIndex === -1) return [...current, category]
+
+      return current.map((item) => (item.id === category.id ? category : item))
+    })
+    router.refresh()
+  }
+
+  function handleCategoryArchive(archivedIds: string[]) {
+    const archivedIdSet = new Set(archivedIds)
+    const nextCategories = managedCategories.map((category) => (
+      archivedIdSet.has(category.id) ? { ...category, is_archived: true } : category
+    ))
+
+    setManagedCategories(nextCategories)
+    if (archivedIdSet.has(resolvedCategoryId) || archivedIdSet.has(resolvedParentId)) {
+      const nextSelection = resolveCategorySelection(buildCategoryPickerGroups(nextCategories, transactionKind), '')
+      setCategoryId(nextSelection.categoryId)
+    }
+    router.refresh()
+  }
+
+  function handleMerchantGroupUpsert(group: FamilyMerchantGroup) {
+    setManagedMerchantGroups((current) => {
+      const existingIndex = current.findIndex((item) => item.id === group.id)
+      if (existingIndex === -1) return [...current, group]
+
+      return current.map((item) => (item.id === group.id ? group : item))
+    })
+    router.refresh()
+  }
+
+  function handleMerchantGroupArchive(groupId: string) {
+    setManagedMerchantGroups((current) => current.filter((group) => group.id !== groupId))
+    setManagedMerchants((current) => current.map((merchant) => (
+      merchant.group_id === groupId ? { ...merchant, group_id: null } : merchant
+    )))
+    router.refresh()
+  }
+
+  function handleMerchantUpsert(merchantItem: FamilyMerchant, previousName?: string) {
+    setManagedMerchants((current) => {
+      const existingIndex = current.findIndex((item) => item.id === merchantItem.id)
+      if (existingIndex === -1) return [...current, merchantItem]
+
+      return current.map((item) => (item.id === merchantItem.id ? merchantItem : item))
+    })
+    if (previousName && merchant.trim().toLocaleLowerCase('zh-TW') === previousName.trim().toLocaleLowerCase('zh-TW')) {
+      setMerchant(merchantItem.name)
+    }
+    router.refresh()
   }
 
   function handleKindCarouselScroll() {
@@ -1023,7 +2880,7 @@ export function TransactionForm({ accounts, categories, merchants, initialPreset
       let closestKind = kind
       let closestDistance = Number.POSITIVE_INFINITY
 
-      KINDS.forEach((item, index) => {
+      availableKinds.forEach((item, index) => {
         const card = container.children.item(index) as HTMLElement | null
         if (!card) return
 
@@ -1038,6 +2895,54 @@ export function TransactionForm({ accounts, categories, merchants, initialPreset
         updateKind(closestKind)
       }
     }, 90)
+  }
+
+  function handleKindCarouselPointerDown(event: PointerEvent<HTMLDivElement>) {
+    if (event.pointerType !== 'mouse' || event.button !== 0) return
+    if (isInteractiveElement(event.target)) return
+
+    event.preventDefault()
+    const container = kindCarouselRef.current
+    if (!container) return
+
+    kindDragStateRef.current = {
+      active: true,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startScrollLeft: container.scrollLeft,
+    }
+    setIsKindDragging(false)
+    container.setPointerCapture(event.pointerId)
+  }
+
+  function handleKindCarouselPointerMove(event: PointerEvent<HTMLDivElement>) {
+    const drag = kindDragStateRef.current
+    const container = kindCarouselRef.current
+    if (!drag?.active || !container || drag.pointerId !== event.pointerId) return
+
+    const deltaX = event.clientX - drag.startX
+    if (!isKindDragging && Math.abs(deltaX) > 4) {
+      setIsKindDragging(true)
+    }
+
+    if (Math.abs(deltaX) > 0) {
+      event.preventDefault()
+      container.scrollLeft = drag.startScrollLeft - deltaX
+    }
+  }
+
+  function stopKindCarouselDrag(event: PointerEvent<HTMLDivElement>) {
+    const drag = kindDragStateRef.current
+    const container = kindCarouselRef.current
+    if (!drag?.active || drag.pointerId !== event.pointerId) return
+
+    drag.active = false
+    kindDragStateRef.current = null
+    setIsKindDragging(false)
+
+    if (container?.hasPointerCapture(event.pointerId)) {
+      container.releasePointerCapture(event.pointerId)
+    }
   }
 
   function handleAmountKey(key: KeypadKey) {
@@ -1061,14 +2966,184 @@ export function TransactionForm({ accounts, categories, merchants, initialPreset
     setAmount((current) => appendAmountInput(current, key))
   }
 
+  function handleAmountPointerDown(event: PointerEvent<HTMLButtonElement>, key: KeypadKey) {
+    if (event.pointerType === 'mouse') return
+
+    event.preventDefault()
+    skipNextAmountClickRef.current = true
+    handleAmountKey(key)
+  }
+
+  function handleAmountClick(key: KeypadKey) {
+    if (skipNextAmountClickRef.current) {
+      skipNextAmountClickRef.current = false
+      return
+    }
+
+    handleAmountKey(key)
+  }
+
+  function renderSubmitActions() {
+    if (isEditMode) {
+      return (
+        <div className="grid grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)] gap-2 rounded-[1.65rem] bg-white/92 p-2 shadow-[0_18px_42px_rgba(15,23,42,0.12)] backdrop-blur">
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={pending}
+            className="min-h-12 rounded-[1.15rem] border border-[#f0d3cf] bg-[#fff4f2] px-4 text-[0.95rem] font-black text-[#c9563f] transition active:scale-[0.98] disabled:bg-[#f4ebe8] disabled:text-[#d7aaa3]"
+          >
+            {pending ? '處理中' : '刪除'}
+          </button>
+          <button
+            type="submit"
+            name="submitMode"
+            value="ledger"
+            disabled={pending || !canSubmit}
+            className="min-h-12 rounded-[1.15rem] bg-slate-950 px-4 text-[0.95rem] font-black text-white shadow-[0_12px_24px_rgba(15,23,42,0.18)] transition active:scale-[0.98] disabled:bg-[#d8d0c3] disabled:text-white/75 disabled:shadow-none"
+          >
+            {pending ? '保存中' : '儲存修改'}
+          </button>
+        </div>
+      )
+    }
+
+    if (kind === 'reminder') {
+      return (
+        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] gap-2 rounded-[1.65rem] bg-white/92 p-2 shadow-[0_18px_42px_rgba(15,23,42,0.12)] backdrop-blur">
+          <button
+            type="submit"
+            name="submitMode"
+            value="stay"
+            disabled={pending || !canSubmit}
+            className="min-h-12 rounded-[1.15rem] border border-[#d7e8e0] bg-[#f5fbf8] px-4 text-[0.95rem] font-black text-[#356f5f] transition active:scale-[0.98] disabled:border-transparent disabled:bg-[#edf3ef] disabled:text-slate-400"
+          >
+            {pending ? '保存中' : '再加一個'}
+          </button>
+          <button
+            type="submit"
+            name="submitMode"
+            value="ledger"
+            disabled={pending || !canSubmit}
+            className="min-h-12 rounded-[1.15rem] bg-slate-950 px-4 text-[0.95rem] font-black text-white shadow-[0_12px_24px_rgba(15,23,42,0.18)] transition active:scale-[0.98] disabled:bg-[#d8d0c3] disabled:text-white/75 disabled:shadow-none"
+          >
+            {pending ? '保存中' : '儲存提醒'}
+          </button>
+        </div>
+      )
+    }
+
+    return (
+      <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)] gap-2 rounded-[1.65rem] bg-white/92 p-2 shadow-[0_18px_42px_rgba(15,23,42,0.12)] backdrop-blur">
+        <button
+          type="submit"
+          name="submitMode"
+          value="stay"
+          disabled={pending || !canSubmit}
+          className="min-h-12 rounded-[1.15rem] border border-[#e7dccb] bg-[#fcfbf8] px-4 text-[0.95rem] font-black text-slate-700 transition active:scale-[0.98] disabled:border-transparent disabled:bg-[#eee8dd] disabled:text-slate-400"
+        >
+          {pending ? '保存中' : '再記一筆'}
+        </button>
+        <button
+          type="submit"
+          name="submitMode"
+          value="ledger"
+          disabled={pending || !canSubmit}
+          className="min-h-12 rounded-[1.15rem] bg-slate-950 px-4 text-[0.95rem] font-black text-white shadow-[0_12px_24px_rgba(15,23,42,0.18)] transition active:scale-[0.98] disabled:bg-[#d8d0c3] disabled:text-white/75 disabled:shadow-none"
+        >
+          {pending ? '保存中' : '保存'}
+        </button>
+      </div>
+    )
+  }
+
   function renderEntryPage(pageKind: Kind) {
-    const pageCategoryGroups = buildCategoryPickerGroups(categories, pageKind)
+    const pageCategoryGroups = categoryGroupsByKind[pageKind]
     const pageCategorySelection = resolveCategorySelection(
       pageCategoryGroups,
       pageKind === kind ? categoryId : '',
     )
-    const pageCategoryPath = getCategoryPath(pageCategorySelection.categoryId, categories) ?? '選擇分類'
-    const pageSelectedCategory = categories.find((category) => category.id === pageCategorySelection.categoryId) ?? null
+    const pageCategoryPath = categoryPathById.get(pageCategorySelection.categoryId) ?? '選擇分類'
+    const pageSelectedCategory = categoryById.get(pageCategorySelection.categoryId) ?? null
+
+    if (pageKind === 'reminder') {
+      return (
+        <article
+          key={pageKind}
+          className="w-full shrink-0 snap-center"
+          aria-label={`${KIND_LABELS[pageKind]} 頁`}
+        >
+          <section className="overflow-hidden rounded-[1.75rem] bg-[linear-gradient(180deg,#f4fbf7_0%,#ffffff_76%)] px-4 pb-4 pt-4 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[0.68rem] font-black tracking-[0.18em] text-[#5b8c79]">提辦</p>
+                <h2 className="mt-2 text-[1.85rem] font-black leading-tight text-slate-950">
+                  把會重複發生的保養先排好
+                </h2>
+                <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
+                  像冷氣濾網、RO 濾心、地產稅、車輛保養或 HOA，都可以先記成提醒。
+                </p>
+              </div>
+
+              <div className="shrink-0 rounded-full border border-[#d6e8df] bg-white px-3 py-2 text-right shadow-[0_10px_24px_rgba(79,141,124,0.12)]">
+                <div className="text-[0.65rem] font-black tracking-[0.18em] text-[#7b9e91]">提醒事項</div>
+                <div className="mt-0.5 text-sm font-black text-slate-950">房屋 / 汽車</div>
+              </div>
+            </div>
+
+            <div className={`mt-4 h-1 rounded-full ${amountLineClass(pageKind)}`} />
+          </section>
+
+          <section className="mt-4 overflow-hidden rounded-[2rem] bg-white shadow-[0_20px_50px_rgba(15,23,42,0.08)]">
+            <TextFieldRow
+              tone="bg-[#4f8d7c]"
+              label="事項名稱"
+              placeholder="例：RO 濾心更換"
+              value={reminderTitle}
+              onChange={setReminderTitle}
+            />
+            <div className="mx-5 h-px bg-[#edf2ed]" />
+            <SelectFieldRow
+              tone="bg-[#6b9d89]"
+              label={accountFieldLabel(pageKind)}
+              value={selectedReminderAccount ? formatAccountLabel(selectedReminderAccount) : accountFieldPlaceholder(pageKind)}
+              selectedValue={resolvedReminderAccountId}
+              onChange={setAccountId}
+              options={[
+                { value: '', label: accountFieldPlaceholder(pageKind) },
+                ...reminderAccountOptions,
+              ]}
+            />
+            <div className="mx-5 h-px bg-[#edf2ed]" />
+            <SelectFieldRow
+              tone="bg-[#85a86c]"
+              label="頻率"
+              value={REMINDER_FREQUENCY_LABELS[reminderFrequency]}
+              selectedValue={reminderFrequency}
+              onChange={(value) => {
+                if (REMINDER_FREQUENCIES.includes(value as ReminderFrequency)) {
+                  setReminderFrequency(value as ReminderFrequency)
+                }
+              }}
+              options={REMINDER_FREQUENCIES.map((frequency) => ({
+                value: frequency,
+                label: REMINDER_FREQUENCY_LABELS[frequency],
+              }))}
+            />
+            <div className="mx-5 h-px bg-[#edf2ed]" />
+            <ReminderDueDateRow value={reminderDueOn} onChange={setReminderDueOn} />
+            <div className="mx-5 h-px bg-[#edf2ed]" />
+            <TextFieldRow
+              tone="bg-[#8a7de2]"
+              label="備註"
+              placeholder="例：3M 型號、安裝日期、注意事項"
+              value={note}
+              onChange={setNote}
+            />
+          </section>
+        </article>
+      )
+    }
 
     if (pageKind === 'transfer') {
       return (
@@ -1077,66 +3152,76 @@ export function TransactionForm({ accounts, categories, merchants, initialPreset
           className="w-full shrink-0 snap-center"
           aria-label={`${KIND_LABELS[pageKind]} 頁`}
         >
-          <section className="overflow-hidden rounded-[2rem] bg-white px-4 pb-5 pt-5 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
-            <div className="flex items-start justify-between gap-4">
+          <section className="overflow-hidden rounded-[1.75rem] bg-white px-4 pb-4 pt-4 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
+            <div className="flex items-start justify-between gap-3">
               <button
                 type="button"
                 onClick={() => {
                   if (pageKind !== kind) updateKind(pageKind)
                   setIsKeypadVisible(true)
                 }}
-                className={`block text-left font-black ${amountDisplayClass(pageKind)} ${amountAccentClass(pageKind)}`}
+                className={`block text-left ${amountAccentClass(pageKind)}`}
                 aria-label={`開啟${KIND_LABELS[pageKind]}數字鍵盤`}
               >
-                {formatAmountDisplay(amount)}
+                <span className={`block font-black ${amountDisplayClass(pageKind)}`}>
+                  {formatAmountDisplay(amount)}
+                </span>
+                {amount.includes('+') ? (
+                  <span className="mt-1 block text-sm font-bold text-slate-400">
+                    {amount} =
+                  </span>
+                ) : null}
               </button>
 
-              <label className="relative inline-flex items-center gap-2 rounded-full bg-[#f4f1ea] px-3 py-2 text-sm font-black text-slate-600">
-                <span>{currency}</span>
-                <span className="text-slate-300">▾</span>
-                <select
-                  value={currency}
-                  onChange={(event) => {
-                    const value = event.target.value
-                    if (isCurrency(value)) setCurrency(value)
-                  }}
-                  className="absolute inset-0 cursor-pointer opacity-0"
-                  aria-label="幣別"
-                >
-                  {CURRENCIES.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-              </label>
+              <div className="rounded-full bg-[#f4f1ea] px-3 py-2 text-sm font-black text-slate-600">
+                <span>{selectedAccount?.currency ?? currency}</span>
+              </div>
             </div>
 
-            <div className={`mt-4 h-1 rounded-full ${amountLineClass(pageKind)}`} />
+            <div className={`mt-3 h-1 rounded-full ${amountLineClass(pageKind)}`} />
 
-            <div className="mt-5 space-y-3">
+            <div className="mt-4 space-y-3">
               <TransferAccountPairRow
                 sourceValue={selectedAccount ? formatAccountLabel(selectedAccount) : '選擇來源帳戶'}
                 sourceSelectedValue={resolvedAccountId}
                 sourceOptions={[
                   { value: '', label: '選擇來源帳戶' },
-                  ...accounts.map((account) => ({
-                    value: account.id,
-                    label: formatAccountLabel(account),
-                  })),
+                  ...accountOptions,
                 ]}
-                onSourceChange={setAccountId}
+                onSourceChange={handleTransferSourceChange}
                 targetValue={selectedToAccount ? formatAccountLabel(selectedToAccount) : '選擇目標帳戶'}
                 targetSelectedValue={resolvedToAccountId}
                 targetOptions={[
                   { value: '', label: '選擇目標帳戶' },
-                  ...accounts.map((account) => ({
-                    value: account.id,
-                    label: formatAccountLabel(account),
-                  })),
+                  ...accountOptions,
                 ]}
-                onTargetChange={setToAccountId}
+                onTargetChange={handleTransferTargetChange}
+                onSwap={swapTransferAccounts}
               />
+
+              <div className="rounded-[1.35rem] border border-[#f1e1b8] bg-[#fffaf0] px-4 py-3 text-sm font-black text-[#9b6b06]">
+                {transferPreview ? (
+                  <div className="flex flex-col gap-1">
+                    <div className="flex items-center justify-between gap-3">
+                      <span>轉入預估</span>
+                      <span>{formatMoney(transferPreview.targetAmount, transferPreview.targetCurrency)}</span>
+                    </div>
+                    {transferPreview.isCrossCurrency ? (
+                      <p className="text-[0.72rem] font-bold text-[#b58a2a]">
+                        來源 {formatMoney(transferPreview.sourceAmount, transferPreview.sourceCurrency)} 會依匯率自動換算成目標幣別
+                      </p>
+                    ) : (
+                      <p className="text-[0.72rem] font-bold text-[#b58a2a]">
+                        兩個帳戶幣別相同，會直接等額轉入
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-[0.78rem] font-bold text-[#b58a2a]">
+                    選好來源與目標帳戶後，系統會自動依匯率換算。
+                  </div>
+                )}
+              </div>
 
               <TransferDateRow value={occurredAt} onChange={setOccurredAt} />
               <TransferNoteRow value={note} onChange={setNote} />
@@ -1152,50 +3237,47 @@ export function TransactionForm({ accounts, categories, merchants, initialPreset
         className="w-full shrink-0 snap-center"
         aria-label={`${KIND_LABELS[pageKind]} 頁`}
       >
-        <section className={`overflow-hidden rounded-[2rem] bg-gradient-to-br px-5 pb-5 pt-5 shadow-[0_20px_50px_rgba(15,23,42,0.08)] ${pageSurfaceClass(pageKind)}`}>
-          <div className="flex items-start justify-between gap-4">
-            <div aria-hidden="true" />
+        <section className="overflow-hidden rounded-[1.75rem] bg-white px-4 pb-4 pt-4 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
+          <div className="flex items-start justify-between gap-3">
+            <button
+              type="button"
+              onClick={() => {
+                if (pageKind !== kind) updateKind(pageKind)
+                setIsKeypadVisible(true)
+              }}
+              className={`block text-left font-black ${amountDisplayClass(pageKind)} ${amountAccentClass(pageKind)}`}
+              aria-label={`開啟${KIND_LABELS[pageKind]}數字鍵盤`}
+            >
+              {formatAmountDisplay(amount)}
+            </button>
 
-            <div className="text-right">
-              <label className="relative inline-flex items-center gap-2 rounded-full bg-white/88 px-4 py-2 text-sm font-black text-slate-600 shadow-[0_10px_20px_rgba(15,23,42,0.06)]">
-                <span>{currency}</span>
-                <span className="text-slate-300">▾</span>
-                <select
-                  value={currency}
-                  onChange={(event) => {
-                    const value = event.target.value
-                    if (isCurrency(value)) setCurrency(value)
-                  }}
-                  className="absolute inset-0 cursor-pointer opacity-0"
-                  aria-label="幣別"
-                >
-                  {CURRENCIES.map((item) => (
-                    <option key={item} value={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
+            <label className="relative inline-flex items-center gap-2 rounded-full bg-[#f4f1ea] px-3 py-2 text-sm font-black text-slate-600">
+              <span>{currency}</span>
+              <span className="text-slate-300">▾</span>
+              <select
+                value={currency}
+                onChange={(event) => {
+                  const value = event.target.value
+                  if (isCurrency(value)) setCurrency(value)
+                }}
+                className="absolute inset-0 cursor-pointer opacity-0"
+                aria-label="幣別"
+              >
+                {CURRENCIES.map((item) => (
+                  <option key={item} value={item}>
+                    {item}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
 
-          <button
-            type="button"
-            onClick={() => {
-              if (pageKind !== kind) updateKind(pageKind)
-              setIsKeypadVisible(true)
-            }}
-            className={`mt-8 block w-full text-left font-black ${amountDisplayClass(pageKind)} ${amountAccentClass(pageKind)}`}
-            aria-label={`開啟${KIND_LABELS[pageKind]}數字鍵盤`}
-          >
-            {formatAmountDisplay(amount)}
-          </button>
-          <div className={`mt-4 h-1 rounded-full ${amountLineClass(pageKind)}`} />
+          <div className={`mt-3 h-1 rounded-full ${amountLineClass(pageKind)}`} />
         </section>
 
         <section className="mt-4 overflow-hidden rounded-[2rem] bg-white shadow-[0_20px_50px_rgba(15,23,42,0.08)]">
           <CategoryFieldRow
-            value={pageSelectedCategory ? getCategoryPath(pageSelectedCategory.id, categories) ?? pageCategoryPath : pageCategoryPath}
+            value={pageSelectedCategory ? categoryPathById.get(pageSelectedCategory.id) ?? pageCategoryPath : pageCategoryPath}
             onOpen={openCategoryPicker}
           />
           <div className="mx-5 h-px bg-[#efebe4]" />
@@ -1207,10 +3289,7 @@ export function TransactionForm({ accounts, categories, merchants, initialPreset
             onChange={setAccountId}
             options={[
               { value: '', label: accountFieldPlaceholder(pageKind) },
-              ...accounts.map((account) => ({
-                value: account.id,
-                label: formatAccountLabel(account),
-              })),
+              ...accountOptions,
             ]}
           />
 
@@ -1237,27 +3316,15 @@ export function TransactionForm({ accounts, categories, merchants, initialPreset
   }
 
   return (
-    <form
-      ref={formRef}
-      action={handleSubmit}
-      className={isKeypadVisible ? 'pb-[calc(24rem+7rem+env(safe-area-inset-bottom))]' : 'pb-[calc(7rem+env(safe-area-inset-bottom))]'}
-    >
+    <>
+      <form
+        ref={formRef}
+        action={handleSubmit}
+        className={showKeypad ? FORM_PADDING_WITH_KEYPAD : FORM_PADDING_WITHOUT_KEYPAD}
+      >
       <div className="sticky top-0 z-30 bg-[#faf7f0]/92 px-4 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))] backdrop-blur">
-        <div className="mx-auto flex w-full max-w-md items-center justify-between">
-          <div className="w-16" />
-          <h1 className="text-lg font-black tracking-[0.02em] text-slate-950">記一筆</h1>
-          <button
-            type="button"
-            onClick={() => formRef.current?.requestSubmit()}
-            disabled={pending || !canSubmit}
-            className="w-16 text-right text-base font-black text-[#f2b232] disabled:text-slate-300"
-          >
-            {pending ? '保存中' : '保存'}
-          </button>
-        </div>
-
-        <div className="mx-auto mt-3 grid w-full max-w-md grid-cols-3 border-b border-[#ece4d8] px-1">
-          {KINDS.map((item) => {
+        <div className={`mx-auto grid w-full max-w-md ${availableKinds.length === 4 ? 'grid-cols-4' : 'grid-cols-3'} border-b border-[#ece4d8] px-1`}>
+          {availableKinds.map((item) => {
             const isActive = kind === item
 
             return (
@@ -1295,103 +3362,176 @@ export function TransactionForm({ accounts, categories, merchants, initialPreset
         <div
           ref={kindCarouselRef}
           onScroll={handleKindCarouselScroll}
-          className="no-scrollbar flex snap-x snap-mandatory overflow-x-auto"
+          onPointerDown={handleKindCarouselPointerDown}
+          onPointerMove={handleKindCarouselPointerMove}
+          onPointerUp={stopKindCarouselDrag}
+          onPointerCancel={stopKindCarouselDrag}
+          className={`no-scrollbar flex snap-x snap-mandatory overflow-x-auto ${isKindDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
         >
-          {KINDS.map((item) => renderEntryPage(item))}
+          {availableKinds.map((item) => renderEntryPage(item))}
         </div>
       </div>
 
+      {showKeypad ? (
+        <>
+          <button
+            type="button"
+            aria-label="收起數字鍵盤"
+            onClick={() => setIsKeypadVisible(false)}
+            className="fixed inset-x-0 bottom-0 top-[calc(5.25rem+env(safe-area-inset-top))] z-40 bg-transparent"
+          />
+
+          <div
+            className="fixed inset-x-0 z-[60] px-4"
+            style={{ bottom: KEYPAD_FOOTER_BOTTOM_OFFSET }}
+            aria-hidden={!showKeypad}
+          >
+            <div className="mx-auto flex w-full max-w-md flex-col gap-2">
+              <div className="flex justify-end pr-1">
+                <button
+                  type="button"
+                  onClick={() => setIsKeypadVisible(false)}
+                  className="flex h-10 w-10 items-center justify-center rounded-full border border-[#efe7db] bg-white/96 text-slate-500 shadow-[0_10px_20px_rgba(15,23,42,0.1)] transition active:scale-[0.97]"
+                  aria-label="收起數字鍵盤"
+                >
+                  <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none">
+                    <path
+                      d="m6 14 6-6 6 6"
+                      stroke="currentColor"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth="2"
+                    />
+                  </svg>
+                </button>
+              </div>
+              {renderSubmitActions()}
+              <div className="rounded-t-[1.8rem] border border-[#efe7db] bg-white/96 p-2.5 shadow-[0_-16px_36px_rgba(15,23,42,0.14)] backdrop-blur">
+                <div className="flex items-stretch gap-1.5">
+                  <div className={`grid w-[4.1rem] shrink-0 ${availableKinds.length === 4 ? 'grid-rows-4' : 'grid-rows-3'} gap-1.5`}>
+                    {availableKinds.map((item) => {
+                      const isActive = kind === item
+                      return (
+                        <button
+                          key={item}
+                          type="button"
+                          onClick={() => updateKind(item)}
+                          aria-pressed={isActive}
+                          className={`flex min-h-[4.45rem] items-center justify-center rounded-[1.15rem] border text-[0.95rem] font-black tracking-[0.08em] transition active:scale-[0.98] ${
+                            isActive
+                              ? `border-transparent ${keypadShortcutActiveClass(item)}`
+                              : 'border-[#ece6dc] bg-[#fcfbf8] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]'
+                          }`}
+                        >
+                          <span style={{ writingMode: 'vertical-rl' }}>{KIND_LABELS[item]}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  <div className="grid min-w-0 flex-1 grid-cols-4 gap-1.5">
+                    {KEYPAD_KEYS.map((key, index) => {
+                      if (key === 'confirm' && index === 15) return null
+
+                      if (key === 'confirm') {
+                        return (
+                          <button
+                            key={`${key}-${index}`}
+                            type="button"
+                            onPointerDown={(event) => handleAmountPointerDown(event, key)}
+                            onClick={() => handleAmountClick(key)}
+                            disabled={pending}
+                            className="row-span-2 rounded-[1.15rem] bg-[linear-gradient(180deg,#ffbd59_0%,#ff9d2f_100%)] px-2 py-4 text-[1rem] font-black text-white shadow-[0_12px_24px_rgba(255,157,47,0.34)] disabled:opacity-50"
+                          >
+                            確定
+                          </button>
+                        )
+                      }
+
+                      const label = key === 'backspace' ? '⌫' : key === 'clear' ? 'C' : key
+                      const buttonClass =
+                        key === 'backspace' || key === 'clear'
+                          ? 'bg-[#f6f2eb] text-slate-700'
+                          : 'bg-[#fcfbf8] text-slate-950'
+
+                      return (
+                        <button
+                          key={`${key}-${index}`}
+                          type="button"
+                          onPointerDown={(event) => handleAmountPointerDown(event, key)}
+                          onClick={() => handleAmountClick(key)}
+                          className={`min-h-[4.45rem] rounded-[1.15rem] text-[1.7rem] font-black shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] transition active:scale-[0.98] ${buttonClass}`}
+                        >
+                          {label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      ) : (
+        <div
+          className="fixed inset-x-0 z-[60] px-4"
+          style={{ bottom: ACTION_FOOTER_BOTTOM_OFFSET }}
+          aria-hidden={showKeypad}
+        >
+          <div className="mx-auto w-full max-w-md pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
+            {renderSubmitActions()}
+          </div>
+        </div>
+      )}
+      </form>
+
       <CategoryPickerSheet
         open={isCategoryPickerOpen}
-        categories={categories}
-        kind={kind}
+        categories={managedCategories}
+        kind={transactionKind}
         selectedParentId={resolvedParentId}
         selectedCategoryId={resolvedCategoryId}
         onParentChange={handleParentCategoryChange}
         onCategoryChange={handleChildCategoryChange}
-        onParentStep={handleParentCategoryStep}
-        onCategoryStep={handleChildCategoryStep}
+        onOpenSettings={openCategoryManager}
         onClose={() => setIsCategoryPickerOpen(false)}
       />
 
-      <MerchantPickerSheet
-        open={isMerchantPickerOpen}
-        value={merchant}
-        onChange={setMerchant}
-        suggestions={merchantSuggestions}
-        onClose={() => setIsMerchantPickerOpen(false)}
-      />
+      {isCategoryManagerOpen ? (
+        <CategoryManagerSheet
+          open={isCategoryManagerOpen}
+          categories={managedCategories}
+          kind={transactionKind}
+          selectedCategoryId={resolvedCategoryId}
+          onCategoryUpsert={handleCategoryUpsert}
+          onCategoryArchive={handleCategoryArchive}
+          onClose={() => setIsCategoryManagerOpen(false)}
+        />
+      ) : null}
 
-      <div
-        className={`fixed inset-x-0 bottom-[calc(6.25rem+env(safe-area-inset-bottom))] z-40 px-4 transition-all ${
-          isKeypadVisible ? 'pointer-events-auto translate-y-0 opacity-100' : 'pointer-events-none translate-y-6 opacity-0'
-        }`}
-        aria-hidden={!isKeypadVisible}
-      >
-        <div className="mx-auto flex w-full max-w-md flex-col gap-3">
-          <div className="rounded-[2rem] bg-white/92 p-3 shadow-[0_24px_55px_rgba(15,23,42,0.15)] backdrop-blur">
-            <div className="flex items-stretch gap-2">
-              <div className="grid w-[4.7rem] shrink-0 grid-rows-3 gap-2">
-                {KINDS.map((item) => {
-                  const isActive = kind === item
-                  return (
-                    <button
-                      key={item}
-                      type="button"
-                      onClick={() => updateKind(item)}
-                      aria-pressed={isActive}
-                      className={`flex min-h-[5.75rem] items-center justify-center rounded-[1.35rem] border text-[1.05rem] font-black tracking-[0.08em] transition active:scale-[0.98] ${
-                        isActive
-                          ? `border-transparent ${keypadShortcutActiveClass(item)}`
-                          : 'border-[#ece6dc] bg-[#fcfbf8] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]'
-                      }`}
-                    >
-                      <span style={{ writingMode: 'vertical-rl' }}>{KIND_LABELS[item]}</span>
-                    </button>
-                  )
-                })}
-              </div>
+      {isMerchantPickerOpen ? (
+        <MerchantPickerSheet
+          open={isMerchantPickerOpen}
+          merchants={managedMerchants}
+          merchantGroups={managedMerchantGroups}
+          value={merchant}
+          onChange={setMerchant}
+          onOpenSettings={openMerchantManager}
+          onClose={() => setIsMerchantPickerOpen(false)}
+        />
+      ) : null}
 
-              <div className="grid min-w-0 flex-1 grid-cols-4 gap-2">
-                {KEYPAD_KEYS.map((key, index) => {
-                  if (key === 'confirm' && index === 15) return null
-
-                  if (key === 'confirm') {
-                    return (
-                      <button
-                        key={`${key}-${index}`}
-                        type="button"
-                        onClick={() => handleAmountKey(key)}
-                        disabled={pending}
-                        className="row-span-2 rounded-[1.4rem] bg-[linear-gradient(180deg,#ffbd59_0%,#ff9d2f_100%)] px-3 py-6 text-lg font-black text-white shadow-[0_14px_28px_rgba(255,157,47,0.38)] disabled:opacity-50"
-                      >
-                        確定
-                      </button>
-                    )
-                  }
-
-                  const label = key === 'backspace' ? '⌫' : key === 'clear' ? 'C' : key
-                  const buttonClass =
-                    key === 'backspace' || key === 'clear'
-                      ? 'bg-[#f6f2eb] text-slate-700'
-                      : 'bg-[#fcfbf8] text-slate-950'
-
-                  return (
-                    <button
-                      key={`${key}-${index}`}
-                      type="button"
-                      onClick={() => handleAmountKey(key)}
-                      className={`min-h-[4.25rem] rounded-[1.35rem] text-2xl font-black shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] transition active:scale-[0.98] ${buttonClass}`}
-                    >
-                      {label}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </form>
+      {isMerchantManagerOpen ? (
+        <MerchantManagerSheet
+          open={isMerchantManagerOpen}
+          groups={managedMerchantGroups}
+          merchants={managedMerchants}
+          onGroupUpsert={handleMerchantGroupUpsert}
+          onGroupArchive={handleMerchantGroupArchive}
+          onMerchantUpsert={handleMerchantUpsert}
+          onClose={() => setIsMerchantManagerOpen(false)}
+        />
+      ) : null}
+    </>
   )
 }

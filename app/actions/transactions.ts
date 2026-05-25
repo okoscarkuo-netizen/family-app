@@ -2,11 +2,40 @@
 
 import { createAdminClient } from '@/lib/supabase/admin'
 import { normalizeOwner } from '@/lib/finance/types'
+import { convertBetweenCurrencies, getRateSnapshotForDate, getTwdRateTable } from '@/lib/exchange-rates'
 import { revalidatePath } from 'next/cache'
+
+type AdminClient = NonNullable<ReturnType<typeof createAdminClient>>
+type EditableTransactionKind = 'income' | 'expense' | 'transfer'
+type TransactionPayload = {
+  occurred_at: string
+  kind: EditableTransactionKind
+  title: string
+  amount: number
+  currency: string
+  transfer_target_amount?: number | null
+  transfer_target_currency?: string | null
+  category_id: string | null
+  account_id: string
+  to_account_id: string | null
+  owner: 'Oscar' | 'Livia'
+  merchant: string | null
+  merchant_id?: string | null
+  occurred_on: string
+  note: string | null
+}
+
+type StoredTransactionAccounts = {
+  account_id: string | null
+  to_account_id: string | null
+}
 
 export type CreateTransactionResult =
   | { ok: true }
   | { ok: false; error: string }
+
+const VALID_KINDS = new Set<EditableTransactionKind>(['income', 'expense', 'transfer'])
+const VALID_CURRENCIES = new Set(['TWD', 'USD', 'JPY'])
 
 function str(val: FormDataEntryValue | null): string {
   return val ? String(val).trim() : ''
@@ -31,7 +60,7 @@ function normalizeOccurredAt(val: FormDataEntryValue | null): string {
   return parsed.toISOString()
 }
 
-function fail(error: string): CreateTransactionResult {
+function fail(error: string): { ok: false; error: string } {
   return { ok: false, error }
 }
 
@@ -48,24 +77,64 @@ function normalizeCreateTransactionError(message: string) {
 }
 
 async function upsertMerchant(
-  supabase: NonNullable<ReturnType<typeof createAdminClient>>,
+  supabase: AdminClient,
   merchant: string,
   lastUsedAt: string,
+  currency: string,
 ) {
   const normalizedName = normalizeMerchantName(merchant)
   if (!normalizedName) return { ok: true as const, merchantId: null, supported: true as const }
 
+  const { data: existing, error: existingError } = await supabase
+    .from('family_merchants')
+    .select('id, group_id')
+    .eq('normalized_name', normalizedName)
+    .maybeSingle()
+
+  if (existingError) {
+    if (existingError.message.includes('family_merchants')) {
+      return { ok: true as const, merchantId: null, supported: false as const }
+    }
+
+    return { ok: false as const, error: normalizeCreateTransactionError(existingError.message) }
+  }
+
+  const desiredGroupName = merchantCurrencyGroupName(currency)
+  const desiredGroupId = desiredGroupName
+    ? await resolveMerchantGroupId(supabase, desiredGroupName)
+    : null
+
+  if (existing) {
+    const updatePayload: Record<string, unknown> = {
+      name: merchant.trim(),
+      last_used_at: lastUsedAt,
+      is_archived: false,
+    }
+
+    if (!existing.group_id && desiredGroupId) {
+      updatePayload.group_id = desiredGroupId
+    }
+
+    const { data, error } = await supabase
+      .from('family_merchants')
+      .update(updatePayload)
+      .eq('id', existing.id)
+      .select('id')
+      .single()
+
+    if (error) return { ok: false as const, error: normalizeCreateTransactionError(error.message) }
+    return { ok: true as const, merchantId: data.id as string, supported: true as const }
+  }
+
   const { data, error } = await supabase
     .from('family_merchants')
-    .upsert(
-      {
-        name: merchant.trim(),
-        normalized_name: normalizedName,
-        last_used_at: lastUsedAt,
-        is_archived: false,
-      },
-      { onConflict: 'normalized_name' },
-    )
+    .insert({
+      name: merchant.trim(),
+      normalized_name: normalizedName,
+      last_used_at: lastUsedAt,
+      is_archived: false,
+      group_id: desiredGroupId,
+    })
     .select('id')
     .single()
 
@@ -80,12 +149,53 @@ async function upsertMerchant(
   return { ok: true as const, merchantId: data.id as string, supported: true as const }
 }
 
-export async function createTransaction(formData: FormData): Promise<CreateTransactionResult> {
-  const supabase = createAdminClient()
-  if (!supabase) return fail('資料庫連線目前不可用，請稍後再試。')
+function merchantCurrencyGroupName(currency: string) {
+  if (currency === 'USD') return '美國'
+  return '台灣'
+}
 
-  const kind = str(formData.get('kind')) as 'income' | 'expense' | 'transfer'
-  if (!['income', 'expense', 'transfer'].includes(kind)) {
+async function resolveMerchantGroupId(supabase: AdminClient, groupName: string) {
+  const { data, error } = await supabase
+    .from('family_merchant_groups')
+    .select('id')
+    .eq('is_archived', false)
+    .eq('name', groupName)
+    .maybeSingle()
+
+  if (error) {
+    if (error.message.includes('family_merchant_groups')) return null
+    throw new Error(error.message)
+  }
+
+  return data?.id ?? null
+}
+
+function uniqueAccountIds(...ids: Array<string | null | undefined>) {
+  return Array.from(new Set(ids.filter(Boolean))) as string[]
+}
+
+function revalidateTransactionSurfaces(accountIds: string[], transactionId?: string) {
+  revalidatePath('/')
+  revalidatePath('/ledger')
+  revalidatePath('/ledger/new')
+  revalidatePath('/accounts')
+  if (transactionId) {
+    revalidatePath(`/ledger/${encodeURIComponent(transactionId)}/edit`)
+  }
+  for (const id of accountIds) {
+    revalidatePath(`/accounts/${encodeURIComponent(id)}`)
+  }
+}
+
+async function buildTransactionPayload(
+  supabase: AdminClient,
+  formData: FormData,
+): Promise<
+  | { ok: true; payload: TransactionPayload; accountIds: string[] }
+  | { ok: false; error: string }
+> {
+  const kind = str(formData.get('kind')) as EditableTransactionKind
+  if (!VALID_KINDS.has(kind)) {
     return fail(`Invalid kind: ${kind}`)
   }
 
@@ -100,12 +210,12 @@ export async function createTransaction(formData: FormData): Promise<CreateTrans
   const occurredAt = normalizeOccurredAt(formData.get('occurred_at'))
 
   const owner = normalizeOwner(str(formData.get('owner')) || 'Oscar')
-  if (!['Oscar', 'Livia'].includes(owner)) {
+  if (owner !== 'Oscar' && owner !== 'Livia') {
     return fail(`Invalid owner: ${owner}`)
   }
 
   const currency = str(formData.get('currency')) || 'TWD'
-  if (!['TWD', 'USD', 'JPY', 'CNY'].includes(currency)) {
+  if (!VALID_CURRENCIES.has(currency)) {
     return fail(`Invalid currency: ${currency}`)
   }
 
@@ -117,10 +227,10 @@ export async function createTransaction(formData: FormData): Promise<CreateTrans
     return fail('來源帳戶與目標帳戶不能相同')
   }
 
-  const accountIds = Array.from(new Set([accountId, toAccountId].filter(Boolean))) as string[]
+  const accountIds = uniqueAccountIds(accountId, toAccountId)
   const { data: accounts, error: accountError } = await supabase
     .from('family_accounts')
-    .select('id')
+    .select('id, currency, kind')
     .in('id', accountIds)
     .eq('is_archived', false)
 
@@ -129,17 +239,70 @@ export async function createTransaction(formData: FormData): Promise<CreateTrans
   const missingAccount = accountIds.find(id => !foundAccountIds.has(id))
   if (missingAccount) return fail(`找不到帳戶：${missingAccount}`)
 
+  const accountMap = new Map(
+    (accounts ?? []).map((account) => [
+      account.id,
+      {
+        currency: String(account.currency || 'TWD').toUpperCase(),
+        kind: account.kind as 'asset' | 'liability',
+      },
+    ]),
+  )
+  const sourceAccount = accountMap.get(accountId)
+  const targetAccount = toAccountId ? accountMap.get(toAccountId) : null
+
+  if (kind === 'transfer' && (!sourceAccount || !targetAccount)) {
+    return fail('找不到轉帳來源或目標帳戶')
+  }
+
+  const sourceCurrency = sourceAccount?.currency ?? currency
+  const sourceAmount = parseFloat(amountRaw.toFixed(2))
+  let transferTargetAmount: number | null = null
+  let transferTargetCurrency: string | null = null
+
+  if (kind === 'transfer' && targetAccount) {
+    transferTargetCurrency = targetAccount.currency
+    const targetAmountRaw = nullableStr(formData.get('transfer_target_amount'))
+    const targetCurrencyRaw = str(formData.get('transfer_target_currency'))
+
+    if (targetAmountRaw) {
+      const parsedTargetAmount = parseFloat(targetAmountRaw)
+      if (Number.isFinite(parsedTargetAmount) && parsedTargetAmount > 0) {
+        transferTargetAmount = parseFloat(parsedTargetAmount.toFixed(2))
+      }
+    }
+
+    if (!transferTargetAmount) {
+      const rateTable = await getTwdRateTable()
+      const snapshot = getRateSnapshotForDate(rateTable, occurredAt.slice(0, 10))
+      const converted = convertBetweenCurrencies(sourceAmount, sourceCurrency, targetAccount.currency, snapshot)
+      if (converted == null) {
+        return fail(`找不到 ${sourceCurrency} 轉換成 ${targetAccount.currency} 的匯率，請先更新匯率資料。`)
+      }
+      transferTargetAmount = parseFloat(converted.toFixed(2))
+      transferTargetCurrency = targetAccount.currency
+    } else if (targetCurrencyRaw && targetCurrencyRaw.toUpperCase() !== targetAccount.currency) {
+      return fail(`轉入帳戶幣別必須是 ${targetAccount.currency}`)
+    }
+  }
+
   const merchantResult = merchant
-    ? await upsertMerchant(supabase, merchant, occurredAt)
+    ? await upsertMerchant(supabase, merchant, occurredAt, currency)
     : { ok: true as const, merchantId: null, supported: true as const }
   if (!merchantResult.ok) return fail(merchantResult.error)
 
-  const payload = {
+  const payload: TransactionPayload = {
     occurred_at: occurredAt,
     kind,
     title,
-    amount: parseFloat(amountRaw.toFixed(2)),
-    currency,
+    amount: sourceAmount,
+    currency: sourceCurrency,
+    ...(kind === 'transfer'
+      ? {
+          transfer_target_amount: transferTargetAmount,
+          transfer_target_currency: transferTargetCurrency,
+        }
+      : {}),
     category_id: nullableStr(formData.get('category_id')),
     account_id: accountId,
     to_account_id: toAccountId,
@@ -147,18 +310,62 @@ export async function createTransaction(formData: FormData): Promise<CreateTrans
     merchant,
     occurred_on: occurredAt.slice(0, 10),
     note: nullableStr(formData.get('note')),
-    ...(merchantResult.supported ? { merchant_id: merchantResult.merchantId } : {}),
   }
 
-  const { error } = await supabase.from('family_transactions').insert(payload)
+  if (merchantResult.supported) {
+    payload.merchant_id = merchantResult.merchantId
+  }
+
+  return { ok: true, payload, accountIds }
+}
+
+export async function createTransaction(formData: FormData): Promise<CreateTransactionResult> {
+  const supabase = createAdminClient()
+  if (!supabase) return fail('資料庫連線目前不可用，請稍後再試。')
+
+  const transaction = await buildTransactionPayload(supabase, formData)
+  if (!transaction.ok) return transaction
+
+  const { error } = await supabase.from('family_transactions').insert(transaction.payload)
   if (error) return fail(normalizeCreateTransactionError(error.message))
 
-  revalidatePath('/ledger')
-  revalidatePath('/ledger/new')
-  revalidatePath('/accounts')
-  for (const id of accountIds) {
-    revalidatePath(`/accounts/${encodeURIComponent(id)}`)
-  }
+  revalidateTransactionSurfaces(transaction.accountIds)
+
+  return { ok: true }
+}
+
+export async function updateTransaction(id: string, formData: FormData): Promise<CreateTransactionResult> {
+  const supabase = createAdminClient()
+  if (!supabase) return fail('資料庫連線目前不可用，請稍後再試。')
+
+  const { data: existing, error: existingError } = await supabase
+    .from('family_transactions')
+    .select('account_id, to_account_id')
+    .eq('id', id)
+    .maybeSingle()
+
+  if (existingError) return fail(normalizeCreateTransactionError(existingError.message))
+  if (!existing) return fail('找不到這筆交易，可能已被刪除。')
+
+  const transaction = await buildTransactionPayload(supabase, formData)
+  if (!transaction.ok) return transaction
+
+  const { error } = await supabase
+    .from('family_transactions')
+    .update(transaction.payload)
+    .eq('id', id)
+
+  if (error) return fail(normalizeCreateTransactionError(error.message))
+
+  const previous = existing as StoredTransactionAccounts
+  revalidateTransactionSurfaces(
+    uniqueAccountIds(
+      previous.account_id,
+      previous.to_account_id,
+      ...transaction.accountIds,
+    ),
+    id,
+  )
 
   return { ok: true }
 }
@@ -179,10 +386,6 @@ export async function deleteTransaction(id: string) {
     .eq('id', id)
 
   if (error) throw new Error(error.message)
-  revalidatePath('/ledger')
-  revalidatePath('/accounts')
   const accountIds = [transaction?.account_id, transaction?.to_account_id].filter(Boolean) as string[]
-  for (const accountId of accountIds) {
-    revalidatePath(`/accounts/${encodeURIComponent(accountId)}`)
-  }
+  revalidateTransactionSurfaces(accountIds, id)
 }
