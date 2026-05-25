@@ -1,50 +1,70 @@
+import Link from 'next/link'
 import { BottomNav } from '@/components/BottomNav'
-import { PageShell, softSurfaceClass, surfaceClass } from '@/components/PageShell'
+import { PasskeyRegistrationCard } from './_components/PasskeyRegistrationCard'
 
-const plannedItems = [
-  '家庭設定',
-  '通知偏好',
-  '分類管理',
-  '資料匯入與匯出',
+const quickLinks = [
+  {
+    href: '/categories',
+    title: '分類管理',
+    description: '新增、修改或封存收支與轉帳分類。',
+  },
+  {
+    href: '/merchants',
+    title: '商家管理',
+    description: '編輯商家名稱與所屬分類。',
+  },
 ]
 
 export default function MorePage() {
   return (
-    <PageShell
-      title="更多"
-      eyebrow="施工中"
-      description="這裡之後會放更多設定與進階管理功能，現在先保留入口。"
-      contentClassName="space-y-5"
-    >
-      <section className={`${surfaceClass} space-y-4`}>
-        <div className="flex items-center gap-3">
-          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border-2 border-slate-950 bg-[#fff45f] text-2xl font-black text-slate-950 shadow-[4px_4px_0_#111827]">
-            ⋯
-          </div>
-          <div>
-            <h2 className="text-lg font-black text-slate-950">更多功能施工中</h2>
-            <p className="text-sm font-bold text-slate-600">
-              目前先提供入口，後續會把設定相關功能集中放在這裡。
-            </p>
-          </div>
-        </div>
-      </section>
+    <>
+      <main className="min-h-screen bg-[#f2f3f1] text-[#1f2328]">
+        <section className="mx-auto min-h-screen w-full max-w-md bg-white pb-32 shadow-[0_0_42px_rgba(15,23,42,0.08)]">
+          <header className="sticky top-0 z-30 border-b border-[#eeeeec] bg-white/95 backdrop-blur">
+            <div className="flex h-[4.5rem] items-center px-5">
+              <h1 className="text-[1.35rem] font-semibold tracking-normal text-[#202124]">更多</h1>
+            </div>
+          </header>
 
-      <section className={`${softSurfaceClass} space-y-3`}>
-        <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-700">預計會放的項目</p>
-        <div className="flex flex-wrap gap-2">
-          {plannedItems.map(item => (
-            <span
-              key={item}
-              className="rounded-full border-2 border-slate-950 bg-white px-3 py-1 text-xs font-black text-slate-950"
-            >
-              {item}
-            </span>
-          ))}
-        </div>
-      </section>
+          <div className="space-y-3 px-4 pt-4">
+            <section className="rounded-[1.35rem] border border-[#ece4d8] bg-white px-4 py-4 shadow-[0_10px_28px_rgba(15,23,42,0.06)]">
+              <p className="text-[0.72rem] font-black tracking-[0.16em] text-slate-400">設定與管理</p>
+              <p className="mt-2 text-sm font-bold text-slate-600">
+                把家庭設定、分類與資料管理集中在這裡，先從常用入口開始。
+              </p>
+            </section>
 
+            <PasskeyRegistrationCard />
+
+            <section className="rounded-[1.35rem] border border-[#ece4d8] bg-white p-2 shadow-[0_10px_28px_rgba(15,23,42,0.06)]">
+              <p className="px-3 pb-2 pt-2 text-[0.72rem] font-black tracking-[0.16em] text-slate-400">
+                常用入口
+              </p>
+              <div className="divide-y divide-[#f1ede6]">
+                {quickLinks.map((link) => (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className="flex items-center justify-between gap-3 px-3 py-3 transition hover:bg-[#fbfaf7]"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate text-[0.98rem] font-black text-slate-950">
+                        {link.title}
+                      </div>
+                      <div className="mt-0.5 truncate text-xs font-bold text-slate-500">
+                        {link.description}
+                      </div>
+                    </div>
+                    <span aria-hidden="true" className="text-xl leading-none text-slate-300">›</span>
+                  </Link>
+                ))}
+              </div>
+            </section>
+
+          </div>
+        </section>
+      </main>
       <BottomNav />
-    </PageShell>
+    </>
   )
 }

@@ -76,14 +76,27 @@ create table public.household_dashboard_state (
   updated_at timestamptz not null default now()
 );
 
+create table public.exchange_rate_snapshots (
+  snapshot_date date primary key,
+  source text not null default 'cbc',
+  source_date date not null,
+  rates jsonb not null,
+  checked_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create table if not exists public.family_accounts (
   id text primary key,
   name text not null,
   type text not null,
   owner text not null,
   shared boolean not null default false,
+  favorite boolean not null default false,
   kind text not null check (kind in ('asset', 'liability')),
   balance numeric(14, 2) not null default 0,
+  opening_balance numeric(14, 2) not null default 0,
+  remark text,
   currency text not null default 'TWD',
   hidden boolean not null default false,
   sort_order integer not null default 0,
@@ -94,6 +107,9 @@ create table if not exists public.family_accounts (
 
 create index if not exists family_accounts_active_sort_idx
   on public.family_accounts (is_archived, sort_order, created_at);
+
+create index if not exists family_accounts_favorite_sort_idx
+  on public.family_accounts (favorite desc, sort_order, created_at);
 
 comment on table public.family_accounts is
   'Single-family passcode-gated account list. Access is intentionally server-side through a Supabase service role key.';
@@ -112,6 +128,18 @@ drop trigger if exists set_family_accounts_updated_at on public.family_accounts;
 create trigger set_family_accounts_updated_at
 before update on public.family_accounts
 for each row execute function public.set_updated_at();
+
+drop trigger if exists set_exchange_rate_snapshots_updated_at on public.exchange_rate_snapshots;
+create trigger set_exchange_rate_snapshots_updated_at
+before update on public.exchange_rate_snapshots
+for each row execute function public.set_updated_at();
+
+alter table public.maintenance_reminders
+  add column if not exists account_id text references public.family_accounts(id) on delete set null,
+  add column if not exists frequency reminder_frequency not null default 'quarterly';
+
+create index if not exists maintenance_reminders_account_idx
+  on public.maintenance_reminders (account_id);
 
 create table if not exists public.family_ledger_entries (
   id uuid primary key default gen_random_uuid(),
@@ -335,6 +363,7 @@ alter table public.todos enable row level security;
 alter table public.bill_reminders enable row level security;
 alter table public.maintenance_reminders enable row level security;
 alter table public.household_dashboard_state enable row level security;
+alter table public.exchange_rate_snapshots enable row level security;
 alter table public.family_accounts enable row level security;
 alter table public.family_ledger_entries enable row level security;
 

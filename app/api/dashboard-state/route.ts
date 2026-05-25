@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { ensureDefaultHouseholdId } from "@/lib/household";
 import { normalizeDashboardState } from "@/lib/dashboard-state";
+import { mergeDashboardStatePreservingExtras } from "@/lib/account-opening-balance-store";
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse, type NextRequest } from "next/server";
 
@@ -108,11 +109,20 @@ export async function PUT(request: NextRequest) {
 
   const householdId = await ensureDefaultHouseholdId(supabase, user);
   const state = normalizeDashboardState((body as { state?: unknown }).state);
+  const { data: existingState, error: existingError } = await supabase
+    .from("household_dashboard_state")
+    .select("state")
+    .eq("household_id", householdId)
+    .maybeSingle();
+
+  if (existingError) return cloudUnavailable(existingError);
+
+  const mergedState = mergeDashboardStatePreservingExtras(existingState?.state, state);
 
   const { error } = await supabase.from("household_dashboard_state").upsert(
     {
       household_id: householdId,
-      state,
+      state: mergedState,
       updated_by: user.id,
     },
     { onConflict: "household_id" }
@@ -122,6 +132,6 @@ export async function PUT(request: NextRequest) {
 
   return NextResponse.json<DashboardStateResponse>({
     source: "cloud",
-    state,
+    state: mergedState as typeof state,
   });
 }

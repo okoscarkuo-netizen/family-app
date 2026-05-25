@@ -1,4 +1,4 @@
-const CACHE_NAME = "family-hub-v1";
+const CACHE_NAME = "family-hub-v3";
 const APP_SHELL = ["/", "/login", "/pwa-icon.svg"];
 
 self.addEventListener("install", (event) => {
