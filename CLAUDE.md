@@ -155,13 +155,14 @@ npx vercel deploy --prod
 > AI 看到使用者提到下面這些主題時，主動引導他做。
 
 ### P0（最近要做）
-- [ ] 把目前未 commit 的 161 個變更分批整理成有意義的 commits
-- [ ] 啟用 Vercel Preview Deployments（每個分支自動產生預覽網址）
-- [ ] 建立分支工作流程（不要直接改 main）
+- [x] 把目前未 commit 的 161 個變更分批整理成有意義的 commits（2026-05-25 完成）
+- [x] 啟用 Vercel Preview Deployments（已連結 GitHub，2026-05-25 完成）
+- [ ] 建立分支工作流程（之後改東西先開分支，不要直接改 main）
 
 ### P1（兩週內）
-- [ ] 寫 5-10 個 Playwright e2e 測試（登入、新增交易、首頁載入、隱藏帳戶）
-- [ ] 接 Sentry 錯誤監控（免費版）
+- [x] 寫 5-10 個 Playwright e2e 測試（13 個煙霧測試，2026-05-25 完成）
+- [x] 接 Sentry 錯誤監控（程式已接好，待設定 DSN 環境變數啟用，見 docs/sentry-setup.md）
+- [ ] 補上需要登入才能測的 e2e（新增交易、隱藏帳戶切換等）
 - [ ] Supabase migration 自動 apply 到 production
 
 ### P2（一個月內）
