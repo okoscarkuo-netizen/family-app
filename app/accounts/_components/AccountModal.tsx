@@ -1,17 +1,24 @@
 'use client'
 
 import { useState, useTransition } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import type { FamilyAccount } from '@/lib/finance/types'
-import { accountTypes, accountOwners, accountCurrencies, normalizeOwner } from '@/lib/finance/types'
-import { createAccount, updateAccount, archiveAccount } from '@/app/actions/accounts'
-import { inputClass, primaryButtonClass, secondaryButtonClass, subtleButtonClass } from '@/components/PageShell'
+import { accountTypes, accountCurrencies, normalizeOwner } from '@/lib/finance/types'
+import { createAccount, updateAccount } from '@/app/actions/accounts'
+import { inputClass, primaryButtonClass, secondaryButtonClass } from '@/components/PageShell'
 
 type Props = {
   mode: 'create' | 'edit'
   account?: FamilyAccount
   onClose: () => void
 }
+
+const ownerOptions = [
+  { value: 'Oscar', label: '老公' },
+  { value: 'Livia', label: '老婆' },
+  { value: 'shared', label: '共用' },
+] as const
 
 export function AccountModal({ mode, account, onClose }: Props) {
   const router = useRouter()
@@ -35,23 +42,22 @@ export function AccountModal({ mode, account, onClose }: Props) {
     })
   }
 
-  function handleArchive() {
-    setError(null)
-    startTransition(async () => {
-      try {
-        await archiveAccount(account!.id)
-        router.refresh()
-        onClose()
-      } catch (err) {
-        setError(err instanceof Error ? err.message : '封存失敗')
-      }
-    })
-  }
+  if (typeof document === 'undefined') return null
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4">
-      <div className="w-full max-w-md rounded-[2rem] border border-[#ece4d8] bg-white p-4 shadow-[0_24px_60px_rgba(15,23,42,0.12)]">
-        <h2 className="text-lg font-black text-slate-950">
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-slate-950/45 p-4 sm:items-center"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain rounded-[2rem] border border-[#ece4d8] bg-white p-4 shadow-[0_24px_60px_rgba(15,23,42,0.12)] sm:p-5"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="account-modal-title"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h2 id="account-modal-title" className="text-lg font-black text-slate-950">
           {mode === 'create' ? '新增帳戶' : '編輯帳戶'}
         </h2>
 
@@ -83,43 +89,35 @@ export function AccountModal({ mode, account, onClose }: Props) {
 
           <label className="block">
             <span className="text-xs font-black text-slate-600">歸屬</span>
-            <select name="owner" defaultValue={normalizeOwner(account?.owner ?? 'Oscar')} className={`mt-1 ${inputClass}`}>
-              {accountOwners.map(o => (
-                <option key={o} value={o}>{o}</option>
+            <select
+              name="owner"
+              defaultValue={account?.shared ? 'shared' : normalizeOwner(account?.owner ?? 'Oscar')}
+              className={`mt-1 ${inputClass}`}
+            >
+              {ownerOptions.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
               ))}
             </select>
           </label>
 
-          <label className="flex items-center gap-2 rounded-md border-2 border-slate-950 bg-[#f7fbff] px-3 py-2 text-sm font-semibold">
-            <input
-              type="checkbox"
-              name="shared"
-              value="true"
-              defaultChecked={account?.shared ?? false}
-              className="size-4"
-            />
-            共用帳戶
-          </label>
-          <p className="-mt-1 text-xs font-bold text-slate-500">
-            勾選後 Oscar / Livia 兩邊都會看到這個帳戶
-          </p>
-
-          <fieldset>
-            <legend className="text-xs font-black text-slate-600">性質</legend>
-            <div className="mt-1 flex gap-4">
-              {(['asset', 'liability'] as const).map(k => (
-                <label key={k} className="flex items-center gap-1.5 text-sm font-semibold">
-                  <input
-                    type="radio"
-                    name="kind"
-                    value={k}
-                    defaultChecked={account ? account.kind === k : k === 'asset'}
-                  />
-                  {k === 'asset' ? '資產' : '負債'}
-                </label>
-              ))}
-            </div>
-          </fieldset>
+          {mode === 'create' && (
+            <fieldset>
+              <legend className="text-xs font-black text-slate-600">性質</legend>
+              <div className="mt-1 flex gap-4">
+                {(['asset', 'liability'] as const).map(k => (
+                  <label key={k} className="flex items-center gap-1.5 text-sm font-semibold">
+                    <input
+                      type="radio"
+                      name="kind"
+                      value={k}
+                      defaultChecked={k === 'asset'}
+                    />
+                    {k === 'asset' ? '資產' : '負債'}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          )}
 
           <label className="block">
             <span className="text-xs font-black text-slate-600">幣別</span>
@@ -130,41 +128,63 @@ export function AccountModal({ mode, account, onClose }: Props) {
             </select>
           </label>
 
-          <label className="block">
-            <span className="text-xs font-black text-slate-600">起始餘額</span>
-            <input
-              name="balance"
-              type="number"
-              min="0"
-              step="0.01"
-              defaultValue={account?.balance ?? 0}
-              className={`mt-1 ${inputClass}`}
-            />
-          </label>
+          <div className="rounded-[1rem] border border-[#efe1bd] bg-[#fffaf0] px-3 py-3">
+            <p className="text-xs font-black text-slate-600">顯示設定</p>
+            <div className="mt-2 space-y-2">
+              <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <input
+                  type="checkbox"
+                  name="favorite"
+                  value="true"
+                  defaultChecked={account?.favorite ?? false}
+                  className="size-4"
+                />
+                設為我的最愛
+              </label>
 
-          <label className="flex items-center gap-2 text-sm font-semibold">
-            <input
-              type="checkbox"
-              name="hidden"
-              value="true"
-              defaultChecked={account?.hidden ?? false}
-              className="size-4"
-            />
-            隱藏此帳戶
-          </label>
+              <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                <input
+                  type="checkbox"
+                  name="hidden"
+                  value="true"
+                  defaultChecked={account?.hidden ?? false}
+                  className="size-4"
+                />
+                隱藏此帳戶
+              </label>
+            </div>
+            <p className="mt-2 text-[0.7rem] font-medium leading-5 text-slate-500">
+              我的最愛會固定顯示在帳戶頁最上方。
+            </p>
+          </div>
 
-          <div className="mt-5 flex items-center justify-between">
-            {mode === 'edit' && (
-              <button
-                type="button"
-                onClick={handleArchive}
-                disabled={isPending}
-                className={`${subtleButtonClass} bg-[#fff45f] text-slate-950 disabled:opacity-50`}
-              >
-                封存帳戶
-              </button>
-            )}
-            <div className={`flex gap-2 ${mode === 'edit' ? '' : 'ml-auto'}`}>
+          {mode === 'edit' ? (
+            <label className="block">
+              <span className="text-xs font-black text-slate-600">備注</span>
+              <textarea
+                name="remark"
+                defaultValue={account?.remark ?? ''}
+                rows={4}
+                className={`mt-1 min-h-[6rem] resize-y ${inputClass} text-sm font-medium leading-5`}
+              />
+            </label>
+          ) : null}
+
+          {mode === 'create' ? (
+            <label className="block">
+              <span className="text-xs font-black text-slate-600">初始金額</span>
+              <input
+                name="balance"
+                type="number"
+                step="0.01"
+                defaultValue={0}
+                className={`mt-1 ${inputClass}`}
+              />
+            </label>
+          ) : null}
+
+          <div className="mt-5 flex items-center justify-end">
+            <div className="flex gap-2">
               <button
                 type="button"
                 onClick={onClose}
@@ -183,6 +203,7 @@ export function AccountModal({ mode, account, onClose }: Props) {
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

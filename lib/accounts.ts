@@ -1,5 +1,5 @@
 import { initialAccounts as andromoneyInitialAccounts } from "@/lib/family-data";
-import { isSharedAccountLabel, normalizeOwner, type AccountKind, type FamilyAccount } from "@/lib/finance/types";
+import { isSharedAccountLabel, normalizeAccountType, normalizeOwner, type AccountKind, type FamilyAccount } from "@/lib/finance/types";
 
 export type { AccountKind, FamilyAccount };
 
@@ -9,17 +9,24 @@ export type AccountRow = {
   type: string;
   owner: string;
   shared?: boolean | null;
+  favorite?: boolean | null;
   kind: AccountKind;
   balance: number | string;
+  opening_balance?: number | string;
+  remark?: string | null;
   currency: string;
   hidden?: boolean | null;
   sort_order?: number | null;
 };
 
 const supportedKinds = new Set<AccountKind>(["asset", "liability"]);
-const supportedCurrencies = new Set(["TWD", "USD", "JPY", "CNY"]);
+const supportedCurrencies = new Set(["TWD", "USD", "JPY"]);
 
-export const initialAccounts: FamilyAccount[] = andromoneyInitialAccounts;
+export const initialAccounts: FamilyAccount[] = andromoneyInitialAccounts.map((account) => ({
+  ...account,
+  balance: 0,
+  openingBalance: 0,
+}));
 
 function cleanText(value: unknown, fallback: string, maxLength = 80) {
   const text = String(value ?? "").trim();
@@ -32,20 +39,29 @@ function cleanBalance(value: unknown) {
   return Math.round(amount * 100) / 100;
 }
 
+function resolveAccountOwner(owner: unknown, name: string) {
+  if (name.includes("伶")) return "Livia";
+  return normalizeOwner(cleanText(owner, "Oscar", 40));
+}
+
 export function normalizeAccount(account: Partial<FamilyAccount>, index = 0): FamilyAccount {
   const name = cleanText(account.name, "未命名帳戶");
   const id = cleanText(account.id, `${Date.now()}-${index}-${name}`, 140);
   const kind = supportedKinds.has(account.kind as AccountKind) ? (account.kind as AccountKind) : "asset";
   const currency = supportedCurrencies.has(String(account.currency)) ? String(account.currency) : "TWD";
+  const remark = String(account.remark ?? "").trim();
 
   return {
     id,
     name,
-    type: cleanText(account.type, "現金", 40),
-    owner: normalizeOwner(cleanText(account.owner, "Oscar", 40)),
+    type: normalizeAccountType(cleanText(account.type, "現金", 40)),
+    owner: resolveAccountOwner(account.owner, name),
     shared: Boolean(account.shared) || isSharedAccountLabel(account.owner) || isSharedAccountLabel(account.name),
+    favorite: Boolean(account.favorite),
     kind,
     balance: cleanBalance(account.balance),
+    openingBalance: cleanBalance(account.openingBalance ?? account.balance),
+    ...(remark ? { remark } : {}),
     currency,
     hidden: Boolean(account.hidden),
   };
@@ -59,25 +75,53 @@ export function normalizeAccounts(accounts: unknown): FamilyAccount[] {
     .filter((account) => account.name);
 }
 
-export function accountFromRow(row: AccountRow): FamilyAccount {
+export function accountFromRow(
+  row: AccountRow,
+  openingBalanceOverride?: number | null,
+  favoriteOverride?: boolean | null,
+): FamilyAccount {
+  const openingBalance =
+    Number.isFinite(openingBalanceOverride as number)
+      ? Number(openingBalanceOverride)
+      : Number(row.opening_balance ?? row.balance);
+  const favorite =
+    typeof favoriteOverride === "boolean"
+      ? favoriteOverride
+      : Boolean(row.favorite);
+
   return normalizeAccount({
     id: row.id,
     name: row.name,
     type: row.type,
     owner: row.owner,
     shared: row.shared ?? false,
+    favorite,
     kind: row.kind,
     balance: Number(row.balance),
+    openingBalance,
+    remark: row.remark ?? undefined,
     currency: row.currency,
     hidden: Boolean(row.hidden),
   });
 }
 
-export function accountToRow(account: FamilyAccount, index: number) {
+export function accountToRow(
+  account: FamilyAccount,
+  index: number,
+  options?: { includeOpeningBalance?: boolean; includeFavorite?: boolean }
+) {
   const normalized = normalizeAccount(account, index);
+  const { openingBalance, remark, favorite, ...row } = normalized;
+  const includeOpeningBalance = options?.includeOpeningBalance ?? true;
+  const includeFavorite = options?.includeFavorite ?? true;
 
   return {
-    ...normalized,
+    ...row,
+    ...(includeOpeningBalance
+      ? { opening_balance: openingBalance ?? normalized.balance }
+      : {}),
+    ...(includeFavorite ? { favorite } : {}),
+    remark: remark ?? null,
     sort_order: index,
     is_archived: false,
   };

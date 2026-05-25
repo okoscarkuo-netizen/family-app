@@ -19,7 +19,7 @@ export type TransactionKind = "income" | "expense" | "transfer" | "adjustment" |
 
 export const accountTypes = [
   "現金",
-  "儲蓄卡",
+  "銀行",
   "信用卡",
   "電子錢包",
   "投資",
@@ -34,7 +34,7 @@ export const accountTypes = [
 export type AccountType = (typeof accountTypes)[number];
 
 export const accountOwners: AccountOwner[] = ["Oscar", "Livia"];
-export const accountCurrencies = ["TWD", "USD", "JPY", "CNY"] as const;
+export const accountCurrencies = ["TWD", "USD", "JPY"] as const;
 
 export function normalizeOwner(value: unknown, fallback: AccountOwner = "Oscar"): AccountOwner | string {
   const owner = String(value ?? "").trim();
@@ -61,8 +61,11 @@ export type FamilyAccount = {
   type: AccountType | string;
   owner: AccountOwner | string;
   shared?: boolean;
+  favorite?: boolean;
   kind: AccountKind;
   balance: number;
+  openingBalance?: number;
+  remark?: string;
   currency: string;
   group?: AccountGroup;
   normalSide?: AccountNormalSide;
@@ -72,8 +75,16 @@ export type FamilyAccount = {
   hidden?: boolean;
 };
 
-const accountTypeGroupMap: Partial<Record<AccountType, AccountGroup>> = {
+export function normalizeAccountType(value: unknown, fallback = "現金") {
+  const type = String(value ?? "").trim();
+  if (!type) return fallback;
+  if (type === "儲蓄卡") return "銀行";
+  return type;
+}
+
+const accountTypeGroupMap: Partial<Record<string, AccountGroup>> = {
   現金: "現金與儲值",
+  銀行: "銀行與活儲",
   儲蓄卡: "銀行與活儲",
   信用卡: "信用卡",
   電子錢包: "現金與儲值",
@@ -118,6 +129,13 @@ export function accountSideLabel(side: AccountNormalSide): string {
   return "資產";
 }
 
+export function getDisplayAccountBalance(account: Pick<FamilyAccount, "balance" | "kind">) {
+  const balance = Number(account.balance);
+  const safeBalance = Number.isFinite(balance) ? balance : 0;
+
+  return account.kind === "liability" ? -Math.abs(safeBalance) : safeBalance;
+}
+
 export function isExpenseLiabilityAccount(account: Pick<FamilyAccount, "kind" | "name" | "type" | "group">) {
   return account.kind === "liability" || getAccountGroup(account) === "信用卡" || account.type === "信用卡";
 }
@@ -125,6 +143,7 @@ export function isExpenseLiabilityAccount(account: Pick<FamilyAccount, "kind" | 
 export function normalizeFinancialAccount(account: FamilyAccount): FamilyAccount {
   const kind = parseAccountKind(account.kind);
   const normalSide = account.normalSide ?? kind;
+  const openingBalance = Number(account.openingBalance);
 
   return {
     ...account,
@@ -133,6 +152,8 @@ export function normalizeFinancialAccount(account: FamilyAccount): FamilyAccount
     group: getAccountGroup(account),
     currency: account.currency || "TWD",
     hidden: account.hidden ?? false,
+    favorite: account.favorite ?? false,
     shared: account.shared ?? (isSharedAccountLabel(account.owner) || isSharedAccountLabel(account.name)),
+    openingBalance: Number.isFinite(openingBalance) ? openingBalance : account.balance,
   };
 }
