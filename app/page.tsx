@@ -6,7 +6,19 @@ import { getAccounts } from '@/lib/accounts-db'
 import { getNetWorthTrendTransactions } from '@/lib/family-transactions'
 import { getTwdRateTable } from '@/lib/exchange-rates'
 
+function formatTodayLabel() {
+  const formatter = new Intl.DateTimeFormat('zh-TW', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+    weekday: 'short',
+    timeZone: 'America/Phoenix',
+  })
+  return formatter.format(new Date())
+}
+
 export default async function HomePage() {
+  const todayLabel = formatTodayLabel()
   const [accounts, rateTable, transactions] = await Promise.all([
     getAccounts(),
     getTwdRateTable(),
@@ -26,6 +38,7 @@ export default async function HomePage() {
                 <h1 className="mt-2 text-[2rem] font-black leading-[0.98] tracking-[-0.05em] text-[#101820] sm:text-[2.6rem]">
                   只看走勢與匯率。
                 </h1>
+                <p className="mt-2 text-xs font-semibold tracking-wide text-[#8a7860]">{todayLabel}</p>
                 <p className="mt-3 max-w-xl text-sm leading-6 text-slate-600">
                   這個首頁只保留最重要的兩個資訊區塊，避免被過多內容干擾。需要時再往下進入流水、帳戶與提醒。
                 </p>
