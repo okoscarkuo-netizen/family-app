@@ -81,11 +81,18 @@
 - **不要累積 100+ 檔案沒 commit**（之前曾累積到 161 個）
 - 每個 commit 訊息要白話、看得懂改了什麼
 
-### 部署前必跑
+### 部署前必跑（一個指令搞定）
 
 ```bash
+npm run check       # = lint + tsc --noEmit + build 一次全跑
+```
+
+或單獨跑：
+```bash
+npm run lint        # ESLint
 npx tsc --noEmit    # 型別檢查
 npm run build       # 確認能打包
+npm run test:e2e:prod  # 跑 e2e 對 production
 ```
 
 ### Production 出錯怎麼查
@@ -154,18 +161,59 @@ npx vercel deploy --prod
 
 > AI 看到使用者提到下面這些主題時，主動引導他做。
 
-### P0（最近要做）
-- [x] 把目前未 commit 的 161 個變更分批整理成有意義的 commits（2026-05-25 完成）
-- [x] 啟用 Vercel Preview Deployments（已連結 GitHub，2026-05-25 完成）
-- [ ] 建立分支工作流程（之後改東西先開分支，不要直接改 main）
+### P0（已完成）
+- [x] 把目前未 commit 的 161 個變更分批整理成有意義的 commits（2026-05-25）
+- [x] 啟用 Vercel Preview Deployments（已連結 GitHub）
+- [x] CLAUDE.md 教訓累積簿
+- [x] GitHub Actions CI（lint + tsc + build + e2e）
 
-### P1（兩週內）
-- [x] 寫 5-10 個 Playwright e2e 測試（13 個煙霧測試，2026-05-25 完成）
-- [x] 接 Sentry 錯誤監控（程式已接好，待設定 DSN 環境變數啟用，見 docs/sentry-setup.md）
+### P1（剩餘）
+- [x] 寫 13 個 Playwright e2e 煙霧測試
+- [x] 接 Sentry 錯誤監控（已啟用，confirmed working 2026-05-25）
+- [x] Supabase migration 自動 apply 工作流程（待使用者設 GitHub Secrets 啟用，見 docs/github-secrets-setup.md）
+- [ ] 建立分支工作流程習慣（之後改東西先 `git checkout -b feat/xxx`，不要直接改 main）
 - [ ] 補上需要登入才能測的 e2e（新增交易、隱藏帳戶切換等）
-- [ ] Supabase migration 自動 apply 到 production
 
 ### P2（一個月內）
 - [ ] 環境分層：本地 / Preview / Production 各自獨立的 Supabase
 - [ ] 拆分 800 行的 AccountList.tsx
 - [ ] 強化 PWA：offline 快取、安裝引導
+
+---
+
+## 八、分支工作流程（新習慣）
+
+從現在起，**新的需求先開分支，不要直接動 main**。
+
+### 開始一個新需求
+
+```bash
+git checkout main
+git pull
+git checkout -b feat/簡短描述   # 例：feat/edit-transaction
+```
+
+### 改完後
+
+```bash
+npm run check               # 跑檢查
+git add -A
+git commit -m "..."
+git push -u origin feat/簡短描述
+```
+
+push 後 Vercel 自動產生 preview 網址（見 GitHub PR 留言或 Vercel dashboard）。
+
+### 合併到 main
+
+確認 preview 沒問題後，到 GitHub 開 PR → CI 通過 → merge。
+Merge 後 Vercel 自動 deploy 到 production。
+
+### 簡寫指令
+
+| 動作 | 指令 |
+|---|---|
+| 開新分支 | `git checkout -b feat/xxx` |
+| 確認改動 | `npm run check` |
+| 推到 GitHub | `git push -u origin HEAD` |
+| 跑 e2e | `npm run test:e2e:prod` |
