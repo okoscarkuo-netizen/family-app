@@ -49,6 +49,7 @@ archive/
 test-results/
 playwright-report/
 .playwright/
+.venv*/
 
 # personal data (do not commit — repo is public)
 imports/andromoney/raw/
