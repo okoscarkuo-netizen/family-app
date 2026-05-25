@@ -1,4 +1,5 @@
 import { login } from '@/app/actions/auth'
+import { PasskeySignInButton } from './_components/PasskeySignInButton'
 import { inputClass, primaryButtonClass, shellBackgroundClass, surfaceClass } from '@/components/PageShell'
 
 type LoginPageProps = {
@@ -25,7 +26,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
               家庭中控
             </p>
             <h1 className="mt-2 text-3xl font-black text-slate-950">登入家庭空間</h1>
-            <p className="mt-2 text-sm font-bold text-slate-600">輸入帳號密碼進入。</p>
+            <p className="mt-2 text-sm font-bold text-slate-600">輸入 Email 與密碼進入。</p>
           </div>
 
           <form action={login} className={`${surfaceClass} space-y-4`}>
@@ -65,6 +66,10 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           >
             進入
           </button>
+          <PasskeySignInButton />
+          <p className="text-center text-xs font-bold text-slate-500">
+            <a href="/reset-password" className="underline hover:text-slate-800">忘記密碼？</a>
+          </p>
         </form>
         </div>
       </div>
