@@ -18,29 +18,27 @@ export function MonthlySummaryCard({ transactions, month }: Props) {
 
   return (
     <Link href="/ledger" className="block">
-      <div className="rounded-xl border-2 border-slate-950 bg-white p-4 shadow-[4px_4px_0_#111827] transition-shadow hover:shadow-[6px_6px_0_#111827]">
-        <p className="mb-3 text-[10px] font-black uppercase tracking-wide text-slate-700">
-          📒 {month}月收支
-        </p>
-        <div className="mb-3 grid grid-cols-2 gap-2">
-          <div className="rounded-lg border-2 border-slate-950 bg-[#dcfce7] p-2">
-            <p className="text-[10px] font-bold text-green-700">收入</p>
-            <p className="text-sm font-black text-green-800">+${fmt(income)}</p>
+      <div className="rounded-[1.35rem] border border-[#ece4d8] bg-white px-4 py-4 shadow-[0_10px_28px_rgba(15,23,42,0.06)] transition hover:shadow-[0_14px_34px_rgba(15,23,42,0.09)]">
+        <p className="text-[0.72rem] font-black tracking-[0.16em] text-slate-400">{month}月收支</p>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <div className="rounded-[0.95rem] bg-[#f2fffb] px-3 py-2.5">
+            <p className="text-[0.68rem] font-black text-[#15957d]">收入</p>
+            <p className="mt-0.5 text-sm font-black text-slate-700">+NT${fmt(income)}</p>
           </div>
-          <div className="rounded-lg border-2 border-slate-950 bg-[#fee2e2] p-2">
-            <p className="text-[10px] font-bold text-red-700">支出</p>
-            <p className="text-sm font-black text-red-800">-${fmt(expense)}</p>
+          <div className="rounded-[0.95rem] bg-[#fef9f0] px-3 py-2.5">
+            <p className="text-[0.68rem] font-black text-[#d18c11]">支出</p>
+            <p className="mt-0.5 text-sm font-black text-slate-700">-NT${fmt(expense)}</p>
           </div>
         </div>
-        <div className="h-2 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
+        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#f0ebe3]">
           <div
-            className="h-full rounded-full bg-[#22c55e] transition-all"
+            className="h-full rounded-full bg-[#17b79c] transition-all"
             style={{ width: `${Math.round(savingRatio * 100)}%` }}
           />
         </div>
-        <div className="mt-1 flex items-center justify-between">
-          <p className="text-[10px] text-slate-500">結餘 ${fmt(balance)}</p>
-          <p className="text-[10px] text-slate-700 opacity-70">→ 查看流水</p>
+        <div className="mt-1.5 flex items-center justify-between">
+          <p className="text-[0.68rem] font-bold text-slate-400">結餘 NT${fmt(balance)}</p>
+          <p className="text-[0.68rem] font-bold text-slate-400">→ 查看流水</p>
         </div>
       </div>
     </Link>

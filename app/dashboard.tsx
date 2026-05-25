@@ -3,12 +3,14 @@
 import { logout } from "@/app/actions/auth";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { createPortal } from "react-dom";
 import {
   accountCurrencies,
   accountGroupOrder,
   accountOwners,
   accountSideLabel,
   accountTypes,
+  getDisplayAccountBalance,
   getAccountGroup,
   isExpenseLiabilityAccount,
   normalizeFinancialAccount,
@@ -63,6 +65,8 @@ type RecentEntry = {
 type AssetTrendPoint = {
   label: string;
   value: number;
+  timestamp: number;
+  dateLabel: string;
 };
 
 type EntryMode = "expense" | "income" | "transfer";
@@ -143,7 +147,6 @@ const exchangeRates: Record<string, number> = {
   TWD: 1,
   USD: 29.085827,
   JPY: 0.19,
-  CNY: 4.02,
 };
 const entryCurrencyOptions = ["TWD", "USD"] as const;
 
@@ -202,6 +205,13 @@ function formatCurrencyValue(value: number, currency = "TWD", options?: Intl.Num
     maximumFractionDigits: currency === "TWD" ? 0 : 2,
     ...options,
   }).format(value);
+}
+
+function formatTrendPointDate(timestamp: number) {
+  const date = new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return "";
+
+  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
 function convertAmount(amount: number, fromCurrency = "TWD", toCurrency = "TWD") {
@@ -297,22 +307,29 @@ function buildAssetTrendPoints(
       }
     }
     const label = i === 0 ? "起點" : i === bucketCount ? "現在" : "";
-    points.push({ label, value: runningValue });
+    const timestamp = Math.min(bucketEndMs, nowMs);
+    points.push({
+      label,
+      value: runningValue,
+      timestamp,
+      dateLabel: formatTrendPointDate(timestamp),
+    });
   }
   return points;
 }
 
 function formatAccountBalance(account: FamilyAccount) {
   const rate = exchangeRates[account.currency] ?? 1;
-  const converted = account.balance * rate;
+  const displayBalance = getDisplayAccountBalance(account);
+  const converted = displayBalance * rate;
 
   if (account.currency === "TWD") {
-    return formatCurrency(account.balance);
+    return formatCurrency(displayBalance);
   }
 
   return `${account.currency} ${new Intl.NumberFormat("en-US", {
     maximumFractionDigits: 2,
-  }).format(account.balance)} ≒ ${formatCurrency(converted)}`;
+  }).format(displayBalance)} ≒ ${formatCurrency(converted)}`;
 }
 
 function convertedBalance(account: FamilyAccount) {
@@ -835,7 +852,6 @@ export function Dashboard({
     () => buildAssetTrendPoints(assetTotal, entries, assetTrendDays),
     [assetTotal, entries, assetTrendDays],
   );
-  const assetTrendDelta = assetTrendPoints[assetTrendPoints.length - 1].value - assetTrendPoints[0].value;
   const sortedEntries = useMemo(() => sortEntriesNewestFirst(entries), [entries]);
   const hiddenAccountsCount = accounts.filter((account) => account.hidden).length;
   const activeAccounts = accounts.filter((account) => !account.hidden);
@@ -1009,13 +1025,12 @@ export function Dashboard({
     const type = String(form.get("type") || editingAccount.type);
     const owner = String(form.get("owner") || editingAccount.owner);
     const kind = parseAccountKind(form.get("kind") || editingAccount.kind);
-    const balance = Number(form.get("balance") || 0);
     const currency = String(form.get("currency") || editingAccount.currency);
 
     setAccounts((current) =>
       current.map((account) =>
         account.id === editingAccount.id
-          ? normalizeFinancialAccount({ ...account, name, type, owner, kind, balance, currency })
+          ? normalizeFinancialAccount({ ...account, name, type, owner, kind, balance: account.balance, currency })
           : account
       )
     );
@@ -1439,9 +1454,8 @@ export function Dashboard({
                   </div>
 
                   <AssetTrendChart
-                    delta={assetTrendDelta}
+                    key={assetTrendRange}
                     points={assetTrendPoints}
-                    total={assetTotal}
                     range={assetTrendRange}
                     onRangeChange={setAssetTrendRange}
                   />
@@ -1586,7 +1600,7 @@ export function Dashboard({
                   <label className="block">
                     <span className="sr-only">搜尋帳戶</span>
                     <input
-	                      className="w-full rounded-md border-2 border-slate-950 bg-[#e9fbff] px-3 py-2 text-sm font-bold text-slate-950 placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-[#ff8c42]"
+                      className="ios-search-input w-full rounded-md border-2 border-slate-950 bg-[#e9fbff] px-3 py-2 font-bold text-slate-950 placeholder:text-slate-400 focus:outline-none focus:ring-4 focus:ring-[#ff8c42]"
                       onChange={(event) => setAccountQuery(event.target.value)}
                       placeholder="搜尋帳戶、類型、幣別或歸屬"
                       type="search"
@@ -1976,16 +1990,36 @@ function AccountSection({
                         {account.type} · {account.owner} · {account.currency}
                       </p>
                     </div>
-                    <span
-                      className={`rounded-full px-2.5 py-1 text-xs font-black ${
-                        account.kind === "asset" ? "bg-[#25f4a3] text-slate-950" : "bg-[#ff8c42] text-slate-950"
-                      }`}
-                    >
-                      {accountSideLabel(account.kind)}
-                    </span>
+                    <div className="flex shrink-0 flex-col items-end gap-1.5">
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-xs font-black ${
+                          account.kind === "asset" ? "bg-[#25f4a3] text-slate-950" : "bg-[#ff8c42] text-slate-950"
+                        }`}
+                      >
+                        {accountSideLabel(account.kind)}
+                      </span>
+                      <button
+                        className="inline-flex size-9 items-center justify-center rounded-[0.9rem] border-2 border-slate-950 bg-white text-slate-500 shadow-[3px_3px_0_#ff8c42] transition hover:bg-[#e9fbff] hover:text-[#15957d]"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onEdit(account);
+                        }}
+                        type="button"
+                        aria-label={`編輯 ${account.name}`}
+                        title="編輯帳戶"
+                      >
+                        <HexEditIcon />
+                      </button>
+                    </div>
                   </div>
                   <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
-                    <p className="min-w-0 text-xl font-black">{formatAccountBalance(account)}</p>
+                    <p
+                      className={`min-w-0 text-xl font-black ${
+                        getDisplayAccountBalance(account) < 0 ? "text-[#c9563f]" : "text-slate-950"
+                      }`}
+                    >
+                      {formatAccountBalance(account)}
+                    </p>
                     <div className="flex shrink-0 gap-1.5">
                       <button
                         aria-label={account.hidden ? `顯示 ${account.name}` : `隱藏 ${account.name}`}
@@ -1998,16 +2032,6 @@ function AccountSection({
                         type="button"
                       >
                         {account.hidden ? "顯示" : "隱藏"}
-                      </button>
-                      <button
-                        className="rounded-md border-2 border-slate-950 bg-white px-2 py-1 text-xs font-black text-slate-950 hover:bg-[#fff45f]"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onEdit(account);
-                        }}
-                        type="button"
-                      >
-                        編輯
                       </button>
                       <button
                         className="rounded-md border-2 border-[#ff3d9a] bg-white px-2 py-1 text-xs font-black text-[#c51f72] hover:bg-[#ffe1f0]"
@@ -2058,27 +2082,36 @@ function AccountDetail({
   return (
     <div className="space-y-4">
       <section className="rounded-md border-2 border-slate-950 bg-white p-4 shadow-[6px_6px_0_#00c2ff]">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-xs font-black text-slate-500">帳戶</p>
-            <h3 className="mt-1 break-words text-xl font-black text-slate-950">{account.name}</h3>
-            <p className="mt-1 text-sm font-bold text-slate-600">
-              {account.type} · {account.owner} · {account.currency} · {accountSideLabel(account.kind)}
-            </p>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-xs font-black text-slate-500">帳戶</p>
+              <h3 className="mt-1 break-words text-xl font-black text-slate-950">{account.name}</h3>
+              <p className="mt-1 text-sm font-bold text-slate-600">
+                {account.type} · {account.owner} · {account.currency} · {accountSideLabel(account.kind)}
+              </p>
+            </div>
+            <button
+              className="inline-flex size-10 items-center justify-center rounded-[1rem] border-2 border-slate-950 bg-[#fbfaf7] text-slate-500 shadow-[3px_3px_0_#ff8c42] transition hover:bg-[#e9fbff] hover:text-[#15957d]"
+              onClick={() => onEditAccount(account)}
+              type="button"
+              aria-label="編輯帳戶"
+              title="編輯帳戶"
+            >
+              <HexEditIcon />
+              <span className="sr-only">編輯帳戶</span>
+            </button>
           </div>
-          <button
-            className="rounded-md border-2 border-slate-950 bg-[#fff45f] px-3 py-2 text-sm font-black text-slate-950 hover:bg-[#ff8c42]"
-            onClick={() => onEditAccount(account)}
-            type="button"
-          >
-            編輯帳戶
-          </button>
-        </div>
 
         <div className="mt-4 grid gap-2 sm:grid-cols-3">
           <div className="rounded-md bg-[#fff7ad] px-3 py-2">
             <p className="text-xs font-black text-slate-500">目前餘額</p>
-            <p className="mt-1 text-base font-black text-slate-950">{formatAccountBalance(account)}</p>
+            <p
+              className={`mt-1 text-base font-black ${
+                getDisplayAccountBalance(account) < 0 ? "text-[#c9563f]" : "text-slate-950"
+              }`}
+            >
+              {formatAccountBalance(account)}
+            </p>
           </div>
           <div className="rounded-md bg-[#e9fbff] px-3 py-2">
             <p className="text-xs font-black text-slate-500">相關紀錄</p>
@@ -2119,14 +2152,10 @@ function AccountDetail({
 
 function AssetTrendChart({
   points,
-  total,
-  delta,
   range,
   onRangeChange,
 }: {
   points: AssetTrendPoint[];
-  total: number;
-  delta: number;
   range: AssetTrendRangeKey;
   onRangeChange: (range: AssetTrendRangeKey) => void;
 }) {
@@ -2134,6 +2163,7 @@ function AssetTrendChart({
   const height = 220;
   const paddingX = 18;
   const paddingY = 24;
+  const [hoveredPointIndex, setHoveredPointIndex] = useState<number | null>(null);
   const values = points.map((point) => point.value);
   const minValue = Math.min(...values);
   const maxValue = Math.max(...values);
@@ -2147,9 +2177,37 @@ function AssetTrendChart({
   });
   const linePath = coordinates.map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`).join(" ");
   const areaPath = `${linePath} L ${coordinates[coordinates.length - 1].x} ${height - paddingY} L ${coordinates[0].x} ${height - paddingY} Z`;
-  const deltaIsPositive = delta >= 0;
   const rangeLabel = assetTrendRanges.find((r) => r.key === range)?.label ?? "5年";
   const lastPoint = coordinates[coordinates.length - 1];
+  const activePointIndex = hoveredPointIndex ?? coordinates.length - 1;
+  const activePoint = coordinates[activePointIndex] ?? lastPoint;
+  const selectedDelta = activePoint.value - points[0].value;
+  const selectedDeltaIsPositive = selectedDelta >= 0;
+
+  const updateHoveredPoint = (event: React.PointerEvent<SVGSVGElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (!rect.width || !rect.height || coordinates.length === 0) return;
+
+    const pointerX = ((event.clientX - rect.left) / rect.width) * width;
+    let nearestIndex = 0;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+
+    coordinates.forEach((point, index) => {
+      const distance = Math.abs(point.x - pointerX);
+      if (distance < nearestDistance) {
+        nearestDistance = distance;
+        nearestIndex = index;
+      }
+    });
+
+    setHoveredPointIndex(nearestIndex);
+  };
+
+  const releaseHoveredPoint = (event: React.PointerEvent<SVGSVGElement>) => {
+    if (event.pointerType !== "mouse") {
+      setHoveredPointIndex(null);
+    }
+  };
 
   return (
     <div className="rounded-lg border-2 border-slate-950 bg-white p-3 text-slate-950 shadow-[6px_6px_0_#111827]">
@@ -2159,8 +2217,9 @@ function AssetTrendChart({
           <p className="mt-1 text-sm font-black text-slate-950">最近 {rangeLabel}</p>
         </div>
         <div className="text-right">
-          <p className="text-xs font-bold text-slate-500">目前</p>
-          <p className="text-sm font-black text-slate-950">{formatCompactCurrency(total)}</p>
+          <p className="text-xs font-bold text-slate-500">{hoveredPointIndex === null ? "目前" : "選取"}</p>
+          <p className="text-sm font-black text-slate-950">{formatCompactCurrency(activePoint.value)}</p>
+          <p className="text-[11px] font-bold text-slate-500">{activePoint.dateLabel}</p>
         </div>
       </div>
 
@@ -2186,10 +2245,22 @@ function AssetTrendChart({
 
       <svg
         aria-label="所有資產金額走勢圖"
-        className="mt-3 h-64 w-full overflow-visible"
+        className="mt-3 h-64 w-full cursor-crosshair overflow-visible touch-none"
         preserveAspectRatio="none"
         role="img"
         viewBox={`0 0 ${width} ${height}`}
+        onPointerDown={(event) => {
+          updateHoveredPoint(event);
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerMove={updateHoveredPoint}
+        onPointerLeave={(event) => {
+          if (event.pointerType === "mouse") {
+            setHoveredPointIndex(null);
+          }
+        }}
+        onPointerUp={releaseHoveredPoint}
+        onPointerCancel={releaseHoveredPoint}
       >
         <defs>
           <linearGradient id="asset-trend-fill" x1="0" x2="0" y1="0" y2="1">
@@ -2204,10 +2275,25 @@ function AssetTrendChart({
             cx={lastPoint.x}
             cy={lastPoint.y}
             fill="#fff45f"
-            r="5.5"
+            r={hoveredPointIndex === coordinates.length - 1 ? "6.5" : "5"}
             stroke="#0f172a"
             strokeWidth="3"
           />
+        )}
+        {activePoint && activePointIndex !== coordinates.length - 1 && (
+          <>
+            <line
+              x1={activePoint.x}
+              x2={activePoint.x}
+              y1={paddingY}
+              y2={height - paddingY}
+              stroke="#0f172a"
+              strokeDasharray="4 4"
+              strokeWidth="1.5"
+              opacity="0.5"
+            />
+            <circle cx={activePoint.x} cy={activePoint.y} fill="#0f172a" r="6" stroke="#fff45f" strokeWidth="3" />
+          </>
         )}
       </svg>
 
@@ -2217,10 +2303,11 @@ function AssetTrendChart({
           <p className="mt-0.5 text-slate-950">{formatCompactCurrency(points[0].value)}</p>
         </div>
         <div className="rounded-md bg-[#fff7ad] px-2 py-1.5">
-          <p className="text-slate-500">變動</p>
-          <p className={`mt-0.5 ${deltaIsPositive ? "text-emerald-700" : "text-[#c51f72]"}`}>
-            {deltaIsPositive ? "+" : ""}
-            {formatCompactCurrency(delta)}
+          <p className="text-slate-500">{hoveredPointIndex === null ? "變動" : "選取"}</p>
+          <p className="mt-0.5 text-slate-950">{activePoint.dateLabel}</p>
+          <p className={`mt-0.5 ${selectedDeltaIsPositive ? "text-emerald-700" : "text-[#c51f72]"}`}>
+            {selectedDeltaIsPositive ? "+" : ""}
+            {formatCompactCurrency(selectedDelta)}
           </p>
         </div>
         <div className="rounded-md bg-[#25f4a3] px-2 py-1.5">
@@ -2283,11 +2370,19 @@ function Panel({
 }
 
 function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
-  return (
-    <div className="fixed inset-0 z-40 grid place-items-end bg-slate-950/50 p-3 sm:place-items-center">
-      <div className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-lg border-2 border-slate-950 bg-[#fff45f] p-5 shadow-[10px_10px_0_#ff3d9a]">
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-[80] grid place-items-end bg-slate-950/50 p-3 sm:place-items-center" onClick={onClose} role="presentation">
+      <div
+        className="max-h-[92vh] w-full max-w-2xl overflow-y-auto rounded-lg border-2 border-slate-950 bg-[#fff45f] p-5 shadow-[10px_10px_0_#ff3d9a]"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="dashboard-modal-title"
+      >
         <div className="mb-4 flex items-center justify-between gap-4">
-          <h2 className="text-lg font-black">{title}</h2>
+          <h2 id="dashboard-modal-title" className="text-lg font-black">{title}</h2>
           <button
             className="rounded-md border-2 border-slate-950 bg-white px-3 py-1.5 text-sm font-black text-slate-950 hover:bg-[#e9fbff]"
             onClick={onClose}
@@ -2298,7 +2393,8 @@ function Modal({ title, children, onClose }: { title: string; children: ReactNod
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -2771,9 +2867,42 @@ function AccountForm({
           </option>
         ))}
       </SelectInput>
-      <TextInput defaultValue={account?.balance} label="目前餘額" name="balance" placeholder="10000" type="number" />
+      {account ? (
+        <p className="rounded-md border-2 border-slate-950 bg-[#fff7ad] px-3 py-2 text-xs font-bold text-slate-700">
+          目前餘額只保留給帳戶頁面的長按 3 秒隱藏調整。
+        </p>
+      ) : (
+        <TextInput label="目前餘額" name="balance" placeholder="10000" type="number" />
+      )}
       <SubmitButton>{submitLabel}</SubmitButton>
     </form>
+  );
+}
+
+function HexEditIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none">
+      <path
+        d="M8.3 4.6h7.4L20 10.2 15.7 19.4H8.3L4 10.2 8.3 4.6Z"
+        stroke="currentColor"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+      <path
+        d="m9.8 14.3 4.4-4.4"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+      <path
+        d="m13.7 8.7 1.6 1.6"
+        stroke="currentColor"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.8"
+      />
+    </svg>
   );
 }
 
@@ -2783,9 +2912,9 @@ function AccountImportForm({ onSubmit }: { onSubmit: (event: FormEvent<HTMLFormE
       <label className="block">
         <span className="mb-1 block text-sm font-black text-slate-800">CSV 帳戶資料</span>
         <textarea
-          className="min-h-44 w-full rounded-md border-2 border-slate-950 bg-white px-3 py-2 font-mono text-sm font-bold text-slate-950 focus:outline-none focus:ring-4 focus:ring-[#00c2ff]"
+          className="min-h-44 w-full rounded-md border-2 border-slate-950 bg-white px-3 py-2 font-sans text-sm font-bold text-slate-950 focus:outline-none focus:ring-4 focus:ring-[#00c2ff]"
           name="accounts"
-          placeholder={"name,type,owner,kind,balance,currency\n玉山銀行,儲蓄卡,Oscar,asset,52000,TWD\n玉山信用卡,信用卡,Livia,liability,18600,TWD\nUS現金,現金,Oscar,asset,1689.04,USD"}
+          placeholder={"name,type,owner,kind,balance,currency\n玉山銀行,銀行,Oscar,asset,52000,TWD\n玉山信用卡,信用卡,Livia,liability,18600,TWD\nUS現金,現金,Oscar,asset,1689.04,USD"}
           required
         />
       </label>
