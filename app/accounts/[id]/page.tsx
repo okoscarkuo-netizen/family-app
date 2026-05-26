@@ -1,11 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { getAccountLedgerDelta, getAccounts, getAccountById } from '@/lib/accounts-db'
-import {
-  getTransactions,
-  getTransferAmountForAccount,
-  type FamilyTransaction,
-} from '@/lib/family-transactions'
+import { getTransactions } from '@/lib/family-transactions'
 import { getDisplayAccountBalance, normalizeOwner } from '@/lib/finance/types'
 import { TransactionList } from '@/app/ledger/_components/TransactionList'
 import { BottomNav } from '@/components/BottomNav'
@@ -51,39 +47,17 @@ function parseAccountView(value: string | undefined): AccountView {
   return 'all'
 }
 
+function fmt(n: number) {
+  return n.toLocaleString('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
 function formatPeriodLabel(view: AccountView, year: number, month: number) {
   if (view === 'all') return '全部期間'
   if (view === 'year') return `${year} 年`
   return `${year} 年 ${month} 月`
 }
 
-function periodSummaryPrefix(view: AccountView) {
-  if (view === 'all') return '總'
-  if (view === 'year') return '本年'
-  return '本月'
-}
 
-function fmt(n: number) {
-  return n.toLocaleString('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
-}
-
-function summarizeForAccount(transactions: FamilyTransaction[], accountId: string) {
-  return transactions.reduce(
-    (acc, tx) => {
-      if (tx.kind === 'income' && tx.account_id === accountId) {
-        acc.income += Math.abs(tx.amount)
-      } else if (tx.kind === 'expense' && tx.account_id === accountId) {
-        acc.expense += Math.abs(tx.amount)
-      } else if (tx.kind === 'transfer') {
-        const transfer = getTransferAmountForAccount(tx, accountId)
-        if (transfer?.role === 'source') acc.transferOut += Math.abs(transfer.amount)
-        if (transfer?.role === 'destination') acc.transferIn += Math.abs(transfer.amount)
-      }
-      return acc
-    },
-    { income: 0, expense: 0, transferIn: 0, transferOut: 0 },
-  )
-}
 
 type PageProps = {
   params: Promise<{ id: string }>
@@ -113,10 +87,8 @@ export default async function AccountDetailPage({ params, searchParams }: PagePr
     getAccountLedgerDelta(account.id),
   ])
 
-  const summary = summarizeForAccount(transactions, account.id)
   const ledgerAccounts = allAccounts.map((a) => ({ id: a.id, name: a.name }))
   const periodLabel = formatPeriodLabel(view, year, month)
-  const periodPrefix = periodSummaryPrefix(view)
 
   return (
     <>
@@ -181,30 +153,6 @@ export default async function AccountDetailPage({ params, searchParams }: PagePr
 
             <section className="rounded-[1.35rem] border border-[#ece4d8] bg-white p-3 shadow-[0_10px_28px_rgba(15,23,42,0.06)]">
               <AccountMonthNav accountId={account.id} view={view} year={year} month={month} />
-              <div className="mt-3 grid grid-cols-2 gap-2">
-                <div className="rounded-[0.95rem] bg-[#f2fffb] px-3 py-2.5">
-                  <p className="text-[0.68rem] font-black text-[#15957d]">{periodPrefix}入</p>
-                  <p className="mt-0.5 text-sm font-black text-slate-700">
-                    +{fmt(summary.income + summary.transferIn)}
-                  </p>
-                  {summary.transferIn > 0 && (
-                    <p className="mt-0.5 text-[0.62rem] font-bold text-slate-400">
-                      含轉入 {fmt(summary.transferIn)}
-                    </p>
-                  )}
-                </div>
-                <div className="rounded-[0.95rem] bg-[#fef9f0] px-3 py-2.5">
-                  <p className="text-[0.68rem] font-black text-[#d18c11]">{periodPrefix}出</p>
-                  <p className="mt-0.5 text-sm font-black text-slate-700">
-                    -{fmt(summary.expense + summary.transferOut)}
-                  </p>
-                  {summary.transferOut > 0 && (
-                    <p className="mt-0.5 text-[0.62rem] font-bold text-slate-400">
-                      含轉出 {fmt(summary.transferOut)}
-                    </p>
-                  )}
-                </div>
-              </div>
               <p className="mt-2 px-1 text-[0.68rem] font-bold text-slate-400">
                 {periodLabel} · {transactions.length.toLocaleString('zh-TW')} 筆
               </p>
