@@ -2711,7 +2711,7 @@ export function TransactionForm({
   const transferResolvedAmounts =
     kind !== 'transfer' || !selectedAccount || !selectedToAccount
       ? null
-      : amountValue > 0 && (transferIsCrossCurrency ? transferTargetAmountValue > 0 : true)
+      : (transferIsCrossCurrency ? transferTargetAmountValue >= 0 : true)
         ? {
             sourceAmount: amountValue,
             sourceCurrency: transferSourceCurrency,
@@ -2726,9 +2726,8 @@ export function TransactionForm({
       : kind === 'transfer'
         ? Boolean(resolvedAccountId)
           && Boolean(resolvedToAccountId)
-          && (transferResolvedAmounts?.sourceAmount ?? 0) > 0
-          && (transferIsCrossCurrency ? (transferResolvedAmounts?.targetAmount ?? 0) > 0 : true)
-        : amountValue > 0 && Boolean(resolvedAccountId)
+          && transferResolvedAmounts !== null
+        : Boolean(resolvedAccountId)
   const showKeypad = isKeypadVisible && kind !== 'reminder'
 
   useEffect(() => {
