@@ -834,17 +834,9 @@ function TransferAmountSingleRow({
         className="flex min-h-[7.1rem] w-full flex-col justify-between rounded-[1.2rem] border border-[#f0c44f] bg-[#fff8cf] px-4 py-3 text-left shadow-[0_10px_22px_rgba(242,178,50,0.14)]"
         aria-label={`編輯轉帳金額，${currency}`}
       >
-        <div className="flex items-center justify-between gap-3">
-          <div className="text-[0.64rem] font-black tracking-[0.16em] text-[#b58a2a]">金額</div>
-          <div className="rounded-full bg-white/75 px-2.5 py-1 text-[0.68rem] font-black tracking-[0.12em] text-[#a06f08]">
-            同幣別
-          </div>
-        </div>
+        <div className="text-[0.64rem] font-black tracking-[0.16em] text-[#b58a2a]">金額</div>
         <div className="mt-1 text-[2rem] font-black leading-none tracking-[-0.06em] text-[#d28a10] sm:text-[2.25rem]">
           {formatAmountDisplay(amount)}
-        </div>
-        <div className="text-[0.72rem] font-bold text-[#b58a2a]">
-          轉入金額會與轉出金額相同
         </div>
       </button>
     </div>
@@ -3269,23 +3261,6 @@ export function TransactionForm({
           aria-label={`${KIND_LABELS[pageKind]} 頁`}
         >
           <section className="overflow-hidden rounded-[1.75rem] bg-white px-4 pb-4 pt-4 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <p className="text-[0.68rem] font-black tracking-[0.18em] text-[#d18c11]">轉帳金額</p>
-                <h2 className="mt-2 text-[1.7rem] font-black leading-tight text-slate-950">
-                  左右兩邊都可以手動輸入
-                </h2>
-                <p className="mt-2 max-w-[24rem] text-sm font-semibold leading-6 text-slate-600">
-                  點左邊或右邊金額切換輸入焦點，兩邊金額彼此獨立。
-                </p>
-              </div>
-
-              <div className="rounded-full border border-[#f0e4cf] bg-[#fffaf0] px-3 py-2 text-right shadow-[0_10px_24px_rgba(242,178,50,0.10)]">
-                <div className="text-[0.65rem] font-black tracking-[0.18em] text-[#b58a2a]">手動模式</div>
-                <div className="mt-0.5 text-sm font-black text-slate-950">左轉出 · 右轉入</div>
-              </div>
-            </div>
-
             <div className="mt-4">
               {transferIsCrossCurrency ? (
                 <TransferAmountPairRow
@@ -3312,35 +3287,6 @@ export function TransactionForm({
                     setIsKeypadVisible(true)
                   }}
                 />
-              )}
-            </div>
-
-            <div className="mt-3 rounded-[1.35rem] border border-[#f1e1b8] bg-[#fffaf0] px-4 py-3 text-sm font-black text-[#9b6b06]">
-              {transferResolvedAmounts ? (
-                transferIsCrossCurrency ? (
-                  <div className="flex flex-col gap-1">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <span>已手動輸入</span>
-                      <span>
-                        {formatMoney(transferResolvedAmounts.sourceAmount, transferResolvedAmounts.sourceCurrency)} → {formatMoney(transferResolvedAmounts.targetAmount, transferResolvedAmounts.targetCurrency)}
-                      </span>
-                    </div>
-                    <p className="text-[0.72rem] font-bold text-[#b58a2a]">
-                      左右兩邊金額各自獨立，儲存前請確認轉出與轉入數字。
-                    </p>
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between gap-3">
-                    <span>同幣別金額</span>
-                    <span>{formatMoney(transferResolvedAmounts.sourceAmount, transferResolvedAmounts.sourceCurrency)}</span>
-                  </div>
-                )
-              ) : (
-                <div className="text-[0.78rem] font-bold text-[#b58a2a]">
-                  {transferIsCrossCurrency
-                    ? '先輸入左邊與右邊金額，兩邊會各自保留手動數字。'
-                    : '同幣別只要輸入一次，轉入金額會自動等於轉出金額。'}
-                </div>
               )}
             </div>
 
