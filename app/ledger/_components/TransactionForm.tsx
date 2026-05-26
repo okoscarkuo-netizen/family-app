@@ -56,11 +56,11 @@ const REMINDER_FREQUENCY_LABELS: Record<(typeof REMINDER_FREQUENCIES)[number], s
 }
 const KEYPAD_KEYS = [
   '7', '8', '9', 'backspace',
-  '4', '5', '6', 'clear',
+  '4', '5', '6', '-',
   '1', '2', '3', 'confirm',
   '.', '0', '+', 'confirm',
 ] as const
-const FORM_PADDING_WITH_KEYPAD = 'pb-[calc(40rem+env(safe-area-inset-bottom))]'
+const FORM_PADDING_WITH_KEYPAD = 'pb-[calc(32rem+env(safe-area-inset-bottom))]'
 const FORM_PADDING_WITHOUT_KEYPAD = 'pb-[calc(12rem+env(safe-area-inset-bottom))]'
 const WHEEL_ITEM_HEIGHT = 52
 const WHEEL_VISIBLE_ROWS = 5
@@ -275,6 +275,12 @@ function parseAmount(amount: string) {
 }
 
 function appendAmountInput(current: string, value: string) {
+  if (value === '-') {
+    if (!current || current.includes('+')) return current
+    if (current.startsWith('-')) return current.slice(1)
+    return `-${current}`
+  }
+
   if (value === '+') {
     if (!current) return current
     if (current.endsWith('+')) return current
@@ -310,6 +316,7 @@ function appendAmountInput(current: string, value: string) {
 function removeAmountCharacter(current: string) {
   if (!current) return ''
   const trimmed = current.slice(0, -1)
+  if (trimmed === '-') return ''
   if (trimmed === '0') return ''
   if (trimmed.endsWith('.')) return trimmed
   if (trimmed.includes('+')) return trimmed
@@ -3125,7 +3132,6 @@ export function TransactionForm({
     if (kind === 'transfer') {
       const amountSide = transferIsCrossCurrency ? activeTransferAmountSide : 'source'
       const updateValue = (current: string) => {
-        if (key === 'clear') return ''
         if (key === 'backspace') return removeAmountCharacter(current)
         return appendAmountInput(current, key)
       }
@@ -3135,11 +3141,6 @@ export function TransactionForm({
       } else {
         setAmount((current) => updateValue(current))
       }
-      return
-    }
-
-    if (key === 'clear') {
-      setAmount('')
       return
     }
 
@@ -3621,7 +3622,7 @@ export function TransactionForm({
                           type="button"
                           onClick={() => updateKind(item)}
                           aria-pressed={isActive}
-                          className={`flex min-h-[4.45rem] items-center justify-center rounded-[1.15rem] border text-[0.95rem] font-black tracking-[0.08em] transition active:scale-[0.98] ${
+                          className={`flex min-h-[3.4rem] items-center justify-center rounded-[1.15rem] border text-[0.95rem] font-black tracking-[0.08em] transition active:scale-[0.98] ${
                             isActive
                               ? `border-transparent ${keypadShortcutActiveClass(item)}`
                               : 'border-[#ece6dc] bg-[#fcfbf8] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]'
@@ -3645,18 +3646,20 @@ export function TransactionForm({
                             onPointerDown={(event) => handleAmountPointerDown(event, key)}
                             onClick={() => handleAmountClick(key)}
                             disabled={pending}
-                            className="row-span-2 rounded-[1.15rem] bg-[linear-gradient(180deg,#ffbd59_0%,#ff9d2f_100%)] px-2 py-4 text-[1rem] font-black text-white shadow-[0_12px_24px_rgba(255,157,47,0.34)] disabled:opacity-50"
+                            className="row-span-2 rounded-[1.15rem] bg-[linear-gradient(180deg,#ffbd59_0%,#ff9d2f_100%)] px-2 py-3 text-[1rem] font-black text-white shadow-[0_12px_24px_rgba(255,157,47,0.34)] disabled:opacity-50"
                           >
                             確定
                           </button>
                         )
                       }
 
-                      const label = key === 'backspace' ? '⌫' : key === 'clear' ? 'C' : key
+                      const label = key === 'backspace' ? '⌫' : key === '-' ? '−' : key
                       const buttonClass =
-                        key === 'backspace' || key === 'clear'
+                        key === 'backspace'
                           ? 'bg-[#f6f2eb] text-slate-700'
-                          : 'bg-[#fcfbf8] text-slate-950'
+                          : key === '-' || key === '+'
+                            ? 'bg-[#f0ebe2] text-slate-700'
+                            : 'bg-[#fcfbf8] text-slate-950'
 
                       return (
                         <button
@@ -3664,7 +3667,7 @@ export function TransactionForm({
                           type="button"
                           onPointerDown={(event) => handleAmountPointerDown(event, key)}
                           onClick={() => handleAmountClick(key)}
-                          className={`min-h-[4.45rem] rounded-[1.15rem] text-[1.7rem] font-black shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] transition active:scale-[0.98] ${buttonClass}`}
+                          className={`min-h-[3.4rem] rounded-[1.15rem] text-[1.4rem] font-black shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] transition active:scale-[0.98] ${buttonClass}`}
                         >
                           {label}
                         </button>
