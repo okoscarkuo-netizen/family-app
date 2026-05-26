@@ -154,45 +154,26 @@ function isInteractiveElement(target: EventTarget | null) {
 function buildAccountOptions(
   accounts: Pick<FamilyAccount, 'id' | 'name' | 'currency' | 'owner' | 'shared' | 'favorite'>[],
 ) {
-  const favorites = accounts.filter((account) => account.favorite)
-  const nonFavorites = accounts.filter((account) => !account.favorite)
-
   const grouped = new Map<string, SelectOption[]>()
   const groupOrder = ['共通帳戶', 'Oscar', 'Livia']
 
-  for (const account of nonFavorites) {
+  for (const account of accounts) {
     const label = getAccountGroupLabel(account)
     const options = grouped.get(label) ?? []
     options.push({
       value: account.id,
-      label: formatAccountLabel(account),
+      label: account.favorite ? `${formatAccountLabel(account)} ★` : formatAccountLabel(account),
     })
     grouped.set(label, options)
   }
 
-  const result: SelectOptionGroup[] = []
-
-  if (favorites.length > 0) {
-    result.push({
-      label: '★ 我的最愛',
-      options: favorites.map((account) => ({
-        value: account.id,
-        label: `★ ${formatAccountLabel(account)}`,
-      })),
+  return groupOrder
+    .map((label) => {
+      const options = grouped.get(label)
+      if (!options?.length) return null
+      return { label, options }
     })
-  }
-
-  result.push(
-    ...groupOrder
-      .map((label) => {
-        const options = grouped.get(label)
-        if (!options?.length) return null
-        return { label, options }
-      })
-      .filter((group): group is SelectOptionGroup => Boolean(group)),
-  )
-
-  return result
+    .filter((group): group is SelectOptionGroup => Boolean(group))
 }
 
 function buildReminderAccountOptions(
