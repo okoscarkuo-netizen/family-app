@@ -2729,7 +2729,8 @@ export function TransactionForm({
         ? Boolean(resolvedAccountId)
           && Boolean(resolvedToAccountId)
           && transferResolvedAmounts !== null
-        : Boolean(resolvedAccountId)
+          && amountValue > 0
+        : Boolean(resolvedAccountId) && amountValue > 0
   const showKeypad = isKeypadVisible && kind !== 'reminder'
 
   useEffect(() => {
