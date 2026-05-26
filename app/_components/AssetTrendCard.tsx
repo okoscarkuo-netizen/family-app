@@ -376,8 +376,12 @@ export function AssetTrendCard({ accounts, transactions, rateTable }: Props) {
 
         <div className="mt-1 flex items-center justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[0.68rem] font-bold text-slate-400">
-              總資產 {formatCurrency(assetTotal)} · 負債 {formatCurrency(liabilityTotal)}
+            <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[0.82rem] font-bold text-slate-400">
+              <span className="tracking-[0.02em]">總資產</span>
+              <span className="text-[0.92rem] text-slate-600">{formatCurrency(assetTotal)}</span>
+              <span className="text-slate-300">·</span>
+              <span className="tracking-[0.02em]">負債</span>
+              <span className="text-[0.92rem] text-slate-600">{formatCurrency(liabilityTotal)}</span>
             </p>
           </div>
         </div>

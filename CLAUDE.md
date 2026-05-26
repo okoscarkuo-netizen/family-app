@@ -56,6 +56,32 @@
 
 ---
 
+### 🔴 雷 6：Vercel preview 環境變數要單獨設，不能從 production 複製
+
+**症狀**：preview 部署上線後出現「A server error occurred」，logs 顯示 `Error: Invalid supabaseUrl`。
+
+**原因**：Production 的環境變數預設**不會**自動同步到 Preview。新建分支的 preview 部署沒有 Supabase URL/Key，導致連線失敗。
+
+**正確做法**：
+- 從 `.env.local` 拿明文值（不是從 Vercel API GET，那拿到的是加密字串）
+- 用 `vercel env add KEY preview --value "明文" --yes` 或 API POST 設定
+- 三個必設：`NEXT_PUBLIC_SUPABASE_URL`、`NEXT_PUBLIC_SUPABASE_ANON_KEY`、`SUPABASE_SERVICE_ROLE_KEY`
+- 設完要 `vercel redeploy <preview-url>` 重新 build（因為 `NEXT_PUBLIC_*` 會被烤進 build artifact）
+
+---
+
+### 🔴 雷 7：Vercel API 的 GET env 回傳的是加密字串
+
+**症狀**：用 Vercel API GET `/v10/projects/{id}/env?decrypt=true` 拿到的 value 看起來像 `eyJ2IjoidjIiLCJjIjoi...`，直接用來 POST 到新 environment 會壞掉。
+
+**原因**：那個字串是 Vercel 內部加密 wrapper，CLI token 沒有 decrypt 權限，`decrypt=true` 參數對個人 token 無效。
+
+**正確做法**：
+- 從 `.env.local` 讀明文（或用 `vercel env pull .env.production --environment=production`，但 sensitive 變數會是空字串）
+- 不要直接從 API GET 結果複製 value 到 POST
+
+---
+
 ### 🟡 雷 5：跨幣別直接加總是錯的
 
 **正確做法**：所有跨幣別加總一定要先用 `convertToTwd()` 換算成 TWD 再加。
@@ -217,3 +243,27 @@ Merge 後 Vercel 自動 deploy 到 production。
 | 確認改動 | `npm run check` |
 | 推到 GitHub | `git push -u origin HEAD` |
 | 跑 e2e | `npm run test:e2e:prod` |
+
+### Preview 網址三種形式
+
+| 網址型態 | 例子 | 變不變 | 用途 |
+|---|---|---|---|
+| 每次部署的隨機 hash | `family-abc12345-okoscarkuo-netizens-projects.vercel.app` | 每次變 | debug 歷史快照 |
+| **每個分支固定的 alias** ⭐ | `family-app-git-<branch>-okoscarkuo-netizens-projects.vercel.app` | 整個分支不變 | **給使用者書籤的網址** |
+| Production alias | `family-app-ruddy-one.vercel.app` | 永遠不變 | 家人在用的正式網站 |
+
+要拿分支固定 alias：`npx vercel inspect <任一 preview URL>` 看 Aliases 區塊。
+
+### 啟用 preview 公開存取（一次性設定）
+
+預設 Vercel preview 會要求 SSO 登入。對個人專案建議關掉：
+
+```bash
+TOKEN=$(python3 -c "import json; print(json.load(open('/Users/hankuo/Library/Application Support/com.vercel.cli/auth.json'))['token'])")
+curl -X PATCH "https://api.vercel.com/v9/projects/prj_dN1SdbhOE39SoB6vhVCjo9aWm15h?teamId=team_1AvjfQlWZkhnWygAfCPgkVFp" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"ssoProtection": null}'
+```
+
+已於 2026-05-25 設定為 null（公開）。

@@ -28,8 +28,6 @@ import {
   type TransactionFormPreset,
 } from '@/lib/family-transactions'
 import {
-  convertBetweenCurrencies,
-  getRateSnapshotForDate,
   type TwdRateTable,
 } from '@/lib/exchange-rates'
 import { normalizeOwner } from '@/lib/finance/types'
@@ -73,6 +71,7 @@ type Currency = (typeof CURRENCIES)[number]
 type Owner = (typeof OWNERS)[number]
 type ReminderFrequency = (typeof REMINDER_FREQUENCIES)[number]
 type KeypadKey = (typeof KEYPAD_KEYS)[number]
+type TransferAmountSide = 'source' | 'target'
 type PickerOption = {
   id: string
   label: string
@@ -745,6 +744,109 @@ function TransferAccountPairRow({
           options={targetOptions}
         />
       </div>
+    </div>
+  )
+}
+
+function TransferAmountPairRow({
+  sourceAmount,
+  sourceCurrency,
+  targetAmount,
+  targetCurrency,
+  activeSide,
+  onSourceOpen,
+  onTargetOpen,
+}: {
+  sourceAmount: string
+  sourceCurrency: string
+  targetAmount: string
+  targetCurrency: string
+  activeSide: TransferAmountSide
+  onSourceOpen: () => void
+  onTargetOpen: () => void
+}) {
+  const sourceActive = activeSide === 'source'
+  const targetActive = activeSide === 'target'
+
+  function amountCellClass(isActive: boolean) {
+    return `min-w-0 flex-1 rounded-[1.2rem] border px-4 py-3 text-left transition ${
+      isActive
+        ? 'border-[#f0c44f] bg-[#fff8cf] shadow-[0_10px_22px_rgba(242,178,50,0.14)]'
+        : 'border-[#ece4d8] bg-white'
+    }`
+  }
+
+  function amountTextClass(isActive: boolean) {
+    return `block truncate text-[1.85rem] font-black leading-none tracking-[-0.06em] sm:text-[2.1rem] ${
+      isActive ? 'text-[#d28a10]' : 'text-slate-950'
+    }`
+  }
+
+  return (
+    <div className="rounded-[1.6rem] border border-[#ece4d8] bg-[#fcfbf8] p-3 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+      <div className="grid grid-cols-[minmax(0,1fr)_1.75rem_minmax(0,1fr)] items-stretch gap-2">
+        <button
+          type="button"
+          onClick={onSourceOpen}
+          className={amountCellClass(sourceActive)}
+          aria-label={`編輯轉出金額，${sourceCurrency}`}
+        >
+          <div className="text-[0.64rem] font-black tracking-[0.16em] text-slate-400">
+            {sourceCurrency}
+          </div>
+          <span className={amountTextClass(sourceActive)}>{formatAmountDisplay(sourceAmount)}</span>
+        </button>
+
+        <div className="flex items-center justify-center text-xl font-black text-slate-300" aria-hidden="true">
+          ›
+        </div>
+
+        <button
+          type="button"
+          onClick={onTargetOpen}
+          className={amountCellClass(targetActive)}
+          aria-label={`編輯轉入金額，${targetCurrency}`}
+        >
+          <div className="text-[0.64rem] font-black tracking-[0.16em] text-slate-400">
+            {targetCurrency}
+          </div>
+          <span className={amountTextClass(targetActive)}>{formatAmountDisplay(targetAmount)}</span>
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function TransferAmountSingleRow({
+  amount,
+  currency,
+  onOpen,
+}: {
+  amount: string
+  currency: string
+  onOpen: () => void
+}) {
+  return (
+    <div className="rounded-[1.6rem] border border-[#ece4d8] bg-[#fcfbf8] p-3 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
+      <button
+        type="button"
+        onClick={onOpen}
+        className="flex min-h-[7.1rem] w-full flex-col justify-between rounded-[1.2rem] border border-[#f0c44f] bg-[#fff8cf] px-4 py-3 text-left shadow-[0_10px_22px_rgba(242,178,50,0.14)]"
+        aria-label={`編輯轉帳金額，${currency}`}
+      >
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-[0.64rem] font-black tracking-[0.16em] text-[#b58a2a]">金額</div>
+          <div className="rounded-full bg-white/75 px-2.5 py-1 text-[0.68rem] font-black tracking-[0.12em] text-[#a06f08]">
+            同幣別
+          </div>
+        </div>
+        <div className="mt-1 text-[2rem] font-black leading-none tracking-[-0.06em] text-[#d28a10] sm:text-[2.25rem]">
+          {formatAmountDisplay(amount)}
+        </div>
+        <div className="text-[0.72rem] font-bold text-[#b58a2a]">
+          轉入金額會與轉出金額相同
+        </div>
+      </button>
     </div>
   )
 }
@@ -2395,7 +2497,6 @@ export function TransactionForm({
   merchants,
   merchantGroups,
   initialPreset,
-  rateTable = null,
   mode = 'create',
   transaction = null,
 }: Props) {
@@ -2416,6 +2517,12 @@ export function TransactionForm({
   const [kind, setKind] = useState<Kind>(initialKind)
   const [pending, setPending] = useState(false)
   const [amount, setAmount] = useState(isEditMode ? String(Number(transaction.amount)) : '')
+  const [transferTargetAmount, setTransferTargetAmount] = useState(
+    isEditMode && initialKind === 'transfer'
+      ? String(Number(transaction.transfer_target_amount ?? transaction.amount))
+      : '',
+  )
+  const [activeTransferAmountSide, setActiveTransferAmountSide] = useState<TransferAmountSide>('source')
   const [isKeypadVisible, setIsKeypadVisible] = useState(true)
   const [isCategoryPickerOpen, setIsCategoryPickerOpen] = useState(false)
   const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false)
@@ -2521,44 +2628,31 @@ export function TransactionForm({
   const resolvedReminderAccountId = reminderAccounts.some((account) => account.id === accountId) ? accountId : ''
   const selectedReminderAccount = accountById.get(resolvedReminderAccountId) ?? null
   const amountValue = parseAmount(amount)
-  const transferSnapshot = useMemo(() => {
-    if (!rateTable) return null
-    return getRateSnapshotForDate(rateTable, (occurredAt || currentLocalDateTimeValue()).slice(0, 10))
-  }, [occurredAt, rateTable])
-  const transferPreview = useMemo(() => {
-    if (kind !== 'transfer' || !selectedAccount || !selectedToAccount || amountValue <= 0) return null
-
-    const sourceCurrency = selectedAccount.currency || currency
-    const targetCurrency = selectedToAccount.currency || currency
-    const sourceAmount = parseFloat(amountValue.toFixed(2))
-
-    if (sourceCurrency === targetCurrency) {
-      return {
-        sourceAmount,
-        sourceCurrency,
-        targetAmount: sourceAmount,
-        targetCurrency,
-        isCrossCurrency: false,
-      }
-    }
-
-    if (!transferSnapshot) return null
-
-    const converted = convertBetweenCurrencies(sourceAmount, sourceCurrency, targetCurrency, transferSnapshot)
-    if (converted == null) return null
-
-    return {
-      sourceAmount,
-      sourceCurrency,
-      targetAmount: parseFloat(converted.toFixed(2)),
-      targetCurrency,
-      isCrossCurrency: true,
-    }
-  }, [amountValue, currency, kind, selectedAccount, selectedToAccount, transferSnapshot])
+  const transferSourceCurrency = (selectedAccount?.currency || currency || 'TWD').toUpperCase()
+  const transferDestinationCurrency = (selectedToAccount?.currency || transferSourceCurrency).toUpperCase()
+  const transferIsCrossCurrency = transferSourceCurrency !== transferDestinationCurrency
+  const transferTargetAmountValue = transferIsCrossCurrency ? parseAmount(transferTargetAmount) : amountValue
+  const transferResolvedAmounts =
+    kind !== 'transfer' || !selectedAccount || !selectedToAccount
+      ? null
+      : amountValue > 0 && (transferIsCrossCurrency ? transferTargetAmountValue > 0 : true)
+        ? {
+            sourceAmount: amountValue,
+            sourceCurrency: transferSourceCurrency,
+            targetAmount: transferTargetAmountValue,
+            targetCurrency: transferDestinationCurrency,
+            isCrossCurrency: transferIsCrossCurrency,
+          }
+        : null
   const canSubmit =
     kind === 'reminder'
       ? Boolean(reminderTitle.trim()) && Boolean(resolvedReminderAccountId) && Boolean(reminderDueOn)
-      : amountValue > 0 && Boolean(resolvedAccountId) && (kind !== 'transfer' || Boolean(resolvedToAccountId))
+      : kind === 'transfer'
+        ? Boolean(resolvedAccountId)
+          && Boolean(resolvedToAccountId)
+          && (transferResolvedAmounts?.sourceAmount ?? 0) > 0
+          && (transferIsCrossCurrency ? (transferResolvedAmounts?.targetAmount ?? 0) > 0 : true)
+        : amountValue > 0 && Boolean(resolvedAccountId)
   const showKeypad = isKeypadVisible && kind !== 'reminder'
 
   useEffect(() => {
@@ -2598,9 +2692,13 @@ export function TransactionForm({
 
     const submitMode = !isEditMode && formData.get('submitMode') === 'stay' ? 'stay' : 'ledger'
     const transferTargetAmount =
-      transferPreview?.targetAmount ?? transaction?.transfer_target_amount ?? null
+      kind === 'transfer'
+        ? (transferIsCrossCurrency ? transferTargetAmountValue : amountValue)
+        : transaction?.transfer_target_amount ?? null
     const transferTargetCurrency =
-      transferPreview?.targetCurrency ?? transaction?.transfer_target_currency ?? null
+      kind === 'transfer'
+        ? transferDestinationCurrency
+        : transaction?.transfer_target_currency ?? null
 
     setMessage(null)
     setPending(true)
@@ -2680,6 +2778,8 @@ export function TransactionForm({
 
       if (submitMode === 'stay') {
         setAmount('')
+        setTransferTargetAmount('')
+        setActiveTransferAmountSide('source')
         setMerchant('')
         setNote('')
         setOccurredAt(currentLocalDateTimeValue())
@@ -2737,12 +2837,12 @@ export function TransactionForm({
       '',
     )
     setCategoryId(nextCategorySelection.categoryId)
-    setIsKeypadVisible(true)
     if (nextKind !== 'transfer') {
       setToAccountId('')
       return
     }
 
+    setActiveTransferAmountSide('source')
     const nextSourceAccount = accountById.get(accountId)
     if (nextSourceAccount && isCurrency(nextSourceAccount.currency)) {
       setCurrency(nextSourceAccount.currency as Currency)
@@ -2769,9 +2869,9 @@ export function TransactionForm({
   }
 
   function swapTransferAccounts() {
-    const nextSourceAccount = accountById.get(toAccountId)
     setAccountId(toAccountId)
     setToAccountId(accountId)
+    const nextSourceAccount = accountById.get(toAccountId)
     if (nextSourceAccount && isCurrency(nextSourceAccount.currency)) {
       setCurrency(nextSourceAccount.currency as Currency)
     }
@@ -2950,6 +3050,22 @@ export function TransactionForm({
 
     if (key === 'confirm') {
       setIsKeypadVisible(false)
+      return
+    }
+
+    if (kind === 'transfer') {
+      const amountSide = transferIsCrossCurrency ? activeTransferAmountSide : 'source'
+      const updateValue = (current: string) => {
+        if (key === 'clear') return ''
+        if (key === 'backspace') return removeAmountCharacter(current)
+        return appendAmountInput(current, key)
+      }
+
+      if (amountSide === 'target') {
+        setTransferTargetAmount((current) => updateValue(current))
+      } else {
+        setAmount((current) => updateValue(current))
+      }
       return
     }
 
@@ -3154,28 +3270,78 @@ export function TransactionForm({
         >
           <section className="overflow-hidden rounded-[1.75rem] bg-white px-4 pb-4 pt-4 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
             <div className="flex items-start justify-between gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  if (pageKind !== kind) updateKind(pageKind)
-                  setIsKeypadVisible(true)
-                }}
-                className={`block text-left ${amountAccentClass(pageKind)}`}
-                aria-label={`開啟${KIND_LABELS[pageKind]}數字鍵盤`}
-              >
-                <span className={`block font-black ${amountDisplayClass(pageKind)}`}>
-                  {formatAmountDisplay(amount)}
-                </span>
-                {amount.includes('+') ? (
-                  <span className="mt-1 block text-sm font-bold text-slate-400">
-                    {amount} =
-                  </span>
-                ) : null}
-              </button>
-
-              <div className="rounded-full bg-[#f4f1ea] px-3 py-2 text-sm font-black text-slate-600">
-                <span>{selectedAccount?.currency ?? currency}</span>
+              <div className="min-w-0">
+                <p className="text-[0.68rem] font-black tracking-[0.18em] text-[#d18c11]">轉帳金額</p>
+                <h2 className="mt-2 text-[1.7rem] font-black leading-tight text-slate-950">
+                  左右兩邊都可以手動輸入
+                </h2>
+                <p className="mt-2 max-w-[24rem] text-sm font-semibold leading-6 text-slate-600">
+                  點左邊或右邊金額切換輸入焦點，兩邊金額彼此獨立。
+                </p>
               </div>
+
+              <div className="rounded-full border border-[#f0e4cf] bg-[#fffaf0] px-3 py-2 text-right shadow-[0_10px_24px_rgba(242,178,50,0.10)]">
+                <div className="text-[0.65rem] font-black tracking-[0.18em] text-[#b58a2a]">手動模式</div>
+                <div className="mt-0.5 text-sm font-black text-slate-950">左轉出 · 右轉入</div>
+              </div>
+            </div>
+
+            <div className="mt-4">
+              {transferIsCrossCurrency ? (
+                <TransferAmountPairRow
+                  sourceAmount={amount}
+                  sourceCurrency={transferSourceCurrency}
+                  targetAmount={transferTargetAmount}
+                  targetCurrency={transferDestinationCurrency}
+                  activeSide={activeTransferAmountSide}
+                  onSourceOpen={() => {
+                    setActiveTransferAmountSide('source')
+                    setIsKeypadVisible(true)
+                  }}
+                  onTargetOpen={() => {
+                    setActiveTransferAmountSide('target')
+                    setIsKeypadVisible(true)
+                  }}
+                />
+              ) : (
+                <TransferAmountSingleRow
+                  amount={amount}
+                  currency={transferSourceCurrency}
+                  onOpen={() => {
+                    setActiveTransferAmountSide('source')
+                    setIsKeypadVisible(true)
+                  }}
+                />
+              )}
+            </div>
+
+            <div className="mt-3 rounded-[1.35rem] border border-[#f1e1b8] bg-[#fffaf0] px-4 py-3 text-sm font-black text-[#9b6b06]">
+              {transferResolvedAmounts ? (
+                transferIsCrossCurrency ? (
+                  <div className="flex flex-col gap-1">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <span>已手動輸入</span>
+                      <span>
+                        {formatMoney(transferResolvedAmounts.sourceAmount, transferResolvedAmounts.sourceCurrency)} → {formatMoney(transferResolvedAmounts.targetAmount, transferResolvedAmounts.targetCurrency)}
+                      </span>
+                    </div>
+                    <p className="text-[0.72rem] font-bold text-[#b58a2a]">
+                      左右兩邊金額各自獨立，儲存前請確認轉出與轉入數字。
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-3">
+                    <span>同幣別金額</span>
+                    <span>{formatMoney(transferResolvedAmounts.sourceAmount, transferResolvedAmounts.sourceCurrency)}</span>
+                  </div>
+                )
+              ) : (
+                <div className="text-[0.78rem] font-bold text-[#b58a2a]">
+                  {transferIsCrossCurrency
+                    ? '先輸入左邊與右邊金額，兩邊會各自保留手動數字。'
+                    : '同幣別只要輸入一次，轉入金額會自動等於轉出金額。'}
+                </div>
+              )}
             </div>
 
             <div className={`mt-3 h-1 rounded-full ${amountLineClass(pageKind)}`} />
@@ -3198,30 +3364,6 @@ export function TransactionForm({
                 onTargetChange={handleTransferTargetChange}
                 onSwap={swapTransferAccounts}
               />
-
-              <div className="rounded-[1.35rem] border border-[#f1e1b8] bg-[#fffaf0] px-4 py-3 text-sm font-black text-[#9b6b06]">
-                {transferPreview ? (
-                  <div className="flex flex-col gap-1">
-                    <div className="flex items-center justify-between gap-3">
-                      <span>轉入預估</span>
-                      <span>{formatMoney(transferPreview.targetAmount, transferPreview.targetCurrency)}</span>
-                    </div>
-                    {transferPreview.isCrossCurrency ? (
-                      <p className="text-[0.72rem] font-bold text-[#b58a2a]">
-                        來源 {formatMoney(transferPreview.sourceAmount, transferPreview.sourceCurrency)} 會依匯率自動換算成目標幣別
-                      </p>
-                    ) : (
-                      <p className="text-[0.72rem] font-bold text-[#b58a2a]">
-                        兩個帳戶幣別相同，會直接等額轉入
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <div className="text-[0.78rem] font-bold text-[#b58a2a]">
-                    選好來源與目標帳戶後，系統會自動依匯率換算。
-                  </div>
-                )}
-              </div>
 
               <TransferDateRow value={occurredAt} onChange={setOccurredAt} />
               <TransferNoteRow value={note} onChange={setNote} />
