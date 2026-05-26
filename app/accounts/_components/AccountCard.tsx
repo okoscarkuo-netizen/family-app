@@ -159,6 +159,7 @@ export function AccountCard({ account, ledgerDelta, onOpen }: Props) {
             </span>
             <span className="block text-right text-[0.68rem] font-bold text-slate-400">{account.currency}</span>
           </span>
+          <span className="text-xl leading-none text-slate-300">›</span>
           {healthy ? (
             <span
               className="flex size-[1.05rem] shrink-0 items-center justify-center rounded-full bg-[#d6f5e8] text-[0.62rem] font-black text-[#15957d]"
@@ -168,7 +169,6 @@ export function AccountCard({ account, ledgerDelta, onOpen }: Props) {
               ✓
             </span>
           ) : null}
-          <span className="text-xl leading-none text-slate-300">›</span>
         </span>
       </Link>
 
