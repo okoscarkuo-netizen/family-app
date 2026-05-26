@@ -9,8 +9,6 @@ type Props = {
   account: FamilyAccount
   ledgerDelta?: number
   onOpen?: (account: FamilyAccount) => void
-  onPinCash?: (account: FamilyAccount) => void
-  pinDisabled?: boolean
 }
 
 function isAccountHealthy(account: FamilyAccount, ledgerDelta: number | undefined): boolean {
@@ -98,7 +96,7 @@ function AutoFitAccountName({ name }: { name: string }) {
   )
 }
 
-export function AccountCard({ account, ledgerDelta, onOpen, onPinCash, pinDisabled = false }: Props) {
+export function AccountCard({ account, ledgerDelta, onOpen }: Props) {
   const displayBalance = getDisplayAccountBalance(account)
   const healthy = isAccountHealthy(account, ledgerDelta)
   const balanceStr = displayBalance.toLocaleString('zh-TW', {
@@ -107,7 +105,6 @@ export function AccountCard({ account, ledgerDelta, onOpen, onPinCash, pinDisabl
   })
   const group = getAccountGroup(account)
   const isShared = isSharedAccount(account)
-  const isCashGroup = group === '現金與儲值'
   const isNegative = displayBalance < 0
   const isFavorite = Boolean(account.favorite)
 
@@ -177,20 +174,6 @@ export function AccountCard({ account, ledgerDelta, onOpen, onPinCash, pinDisabl
         </span>
       </Link>
 
-      <div className="absolute right-2 top-2 flex shrink-0 flex-col items-end gap-1">
-        {isCashGroup && onPinCash ? (
-          <button
-            onClick={() => onPinCash(account)}
-            disabled={pinDisabled}
-            className="flex size-8 items-center justify-center rounded-[0.9rem] border border-[#e4d9c7] bg-white text-[#15957d] shadow-[0_4px_10px_rgba(15,23,42,0.04)] transition hover:border-[#d8c7b0] hover:bg-[#ecfdf8] disabled:opacity-45"
-            type="button"
-            title="置頂現金帳戶"
-            aria-label={`置頂現金帳戶 ${account.name}`}
-          >
-            ↑
-          </button>
-        ) : null}
-      </div>
     </div>
   )
 }

@@ -13,7 +13,7 @@ import {
   isSharedAccount,
   normalizeOwner,
 } from '@/lib/finance/types'
-import { pinCashAccount, reorderAccounts } from '@/app/actions/accounts'
+import { reorderAccounts } from '@/app/actions/accounts'
 
 type Props = {
   accounts: FamilyAccount[]
@@ -438,13 +438,9 @@ function AccountToolsMenu({
 function FavoriteAccountSection({
   accounts,
   ledgerDeltas,
-  onPinCash,
-  pinDisabled,
 }: {
   accounts: FamilyAccount[]
   ledgerDeltas?: Record<string, number>
-  onPinCash: (account: FamilyAccount) => void
-  pinDisabled: boolean
 }) {
   if (accounts.length === 0) return null
 
@@ -466,8 +462,6 @@ function FavoriteAccountSection({
             key={account.id}
             account={account}
             ledgerDelta={ledgerDeltas?.[account.id]}
-            onPinCash={onPinCash}
-            pinDisabled={pinDisabled}
           />
         ))}
       </div>
@@ -634,15 +628,11 @@ function AccountGroupSections({
   ledgerDeltas,
   emptyMessage,
   idPrefix,
-  onPinCash,
-  pinDisabled,
 }: {
   accounts: FamilyAccount[]
   ledgerDeltas?: Record<string, number>
   emptyMessage: string
   idPrefix: string
-  onPinCash: (account: FamilyAccount) => void
-  pinDisabled: boolean
 }) {
   const groupedAccounts = buildGroupedItems(accounts, idPrefix)
 
@@ -671,8 +661,6 @@ function AccountGroupSections({
                 key={account.id}
                 account={account}
                 ledgerDelta={ledgerDeltas?.[account.id]}
-                onPinCash={onPinCash}
-                pinDisabled={pinDisabled}
               />
             ))}
           </div>
@@ -692,8 +680,7 @@ export function AccountList({ accounts, ledgerDeltas }: Props) {
   const [showHiddenAccounts, setShowHiddenAccounts] = useState(false)
   const [isToolsMenuOpen, setIsToolsMenuOpen] = useState(false)
   const [isSortModalOpen, setIsSortModalOpen] = useState(false)
-  const [pinError, setPinError] = useState<string | null>(null)
-  const [isPinPending, startPinTransition] = useTransition()
+
 
   const normalizedQuery = normalizeSearchText(query)
   const visibleAccounts = useMemo(() => accounts.filter((account) => !account.hidden), [accounts])
@@ -801,18 +788,6 @@ export function AccountList({ accounts, ledgerDeltas }: Props) {
     event.stopPropagation()
   }
 
-  function handlePinCash(account: FamilyAccount) {
-    setPinError(null)
-    startPinTransition(async () => {
-      try {
-        await pinCashAccount(account.id)
-        router.refresh()
-      } catch (err) {
-        setPinError(err instanceof Error ? err.message : '現金帳戶置頂失敗，請再試一次')
-      }
-    })
-  }
-
   async function handleReorderAccounts(orderedAccountIds: string[]) {
     await reorderAccounts(orderedAccountIds)
     router.refresh()
@@ -858,12 +833,6 @@ export function AccountList({ accounts, ledgerDeltas }: Props) {
           />
         </div>
 
-        {pinError ? (
-          <p className="mt-2 rounded-[0.85rem] bg-[#fff1f1] px-3 py-2 text-xs font-black text-[#c9563f]">
-            {pinError}
-          </p>
-        ) : null}
-
         <p className="mt-2 px-1 text-[0.72rem] font-bold text-slate-400">
           {normalizedQuery
             ? `顯示 ${displayedAccounts.length} / ${showHiddenAccounts ? currentOwnerTotalCount : currentOwnerVisibleCount} 個符合條件的帳戶`
@@ -876,8 +845,6 @@ export function AccountList({ accounts, ledgerDeltas }: Props) {
           <FavoriteAccountSection
             accounts={favoriteAccounts}
             ledgerDeltas={ledgerDeltas}
-            onPinCash={handlePinCash}
-            pinDisabled={isPinPending}
           />
 
           {regularAccounts.length > 0 ? (
@@ -886,8 +853,6 @@ export function AccountList({ accounts, ledgerDeltas }: Props) {
               ledgerDeltas={ledgerDeltas}
               emptyMessage=""
               idPrefix="account-group"
-              onPinCash={handlePinCash}
-              pinDisabled={isPinPending}
             />
           ) : null}
 
