@@ -119,7 +119,7 @@ export function AccountCard({ account, ledgerDelta, onOpen }: Props) {
       <Link
         href={`/accounts/${encodeURIComponent(account.id)}`}
         onClick={() => onOpen?.(account)}
-        className="grid min-w-0 flex-1 grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 pr-14"
+        className="grid min-w-0 flex-1 grid-cols-[2.5rem_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 pr-10"
       >
         <span
           className={`flex size-9 items-center justify-center rounded-[0.75rem] border text-sm font-black ${groupToneMap[group]}`}
@@ -160,18 +160,20 @@ export function AccountCard({ account, ledgerDelta, onOpen }: Props) {
             <span className="block text-right text-[0.68rem] font-bold text-slate-400">{account.currency}</span>
           </span>
           <span className="text-xl leading-none text-slate-300">›</span>
-          {healthy ? (
-            <span
-              className="flex size-[1.05rem] shrink-0 items-center justify-center rounded-full bg-[#d6f5e8] text-[0.62rem] font-black text-[#15957d]"
-              title="對帳差額為零且確認日期在 30 天內"
-              aria-label="帳戶健康"
-            >
-              ✓
-            </span>
-          ) : null}
         </span>
       </Link>
 
+      {healthy ? (
+        <div className="absolute right-2 top-1/2 -translate-y-1/2">
+          <span
+            className="flex size-[1.05rem] items-center justify-center rounded-full bg-[#d6f5e8] text-[0.62rem] font-black text-[#15957d]"
+            title="對帳差額為零且確認日期在 30 天內"
+            aria-label="帳戶健康"
+          >
+            ✓
+          </span>
+        </div>
+      ) : null}
     </div>
   )
 }
