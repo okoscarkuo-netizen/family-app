@@ -2729,8 +2729,7 @@ export function TransactionForm({
         ? Boolean(resolvedAccountId)
           && Boolean(resolvedToAccountId)
           && transferResolvedAmounts !== null
-          && amountValue > 0
-        : Boolean(resolvedAccountId) && amountValue > 0
+        : Boolean(resolvedAccountId)
   const showKeypad = isKeypadVisible && kind !== 'reminder'
 
   useEffect(() => {
@@ -2767,7 +2766,6 @@ export function TransactionForm({
 
   async function handleSubmit(formData: FormData) {
     if (!canSubmit) return
-    if (kind !== 'reminder' && amountValue <= 0) return
 
     const submitMode = !isEditMode && formData.get('submitMode') === 'stay' ? 'stay' : 'ledger'
     const transferTargetAmount =

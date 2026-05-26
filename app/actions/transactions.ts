@@ -200,8 +200,8 @@ async function buildTransactionPayload(
   }
 
   const amountRaw = parseFloat(str(formData.get('amount')))
-  if (isNaN(amountRaw) || amountRaw <= 0) {
-    return fail('金額必須大於 0')
+  if (isNaN(amountRaw) || amountRaw < 0) {
+    return fail('金額不可為負數')
   }
 
   const merchant = nullableStr(formData.get('merchant'))
