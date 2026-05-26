@@ -154,14 +154,13 @@ export function AccountCard({ account, ledgerDelta, onOpen }: Props) {
 
         <span className="flex min-w-[6.8rem] items-center justify-end gap-2 text-right">
           <span className="min-w-0">
-            <span className={`block truncate text-[0.95rem] font-black ${isNegative ? 'text-[#c9563f]' : 'text-slate-700'}`}>
-              {balanceStr}
-            </span>
             <span className="flex items-center justify-end gap-1">
-              <span className="text-[0.68rem] font-bold text-slate-400">{account.currency}</span>
+              <span className={`truncate text-[0.95rem] font-black ${isNegative ? 'text-[#c9563f]' : 'text-slate-700'}`}>
+                {balanceStr}
+              </span>
               {healthy ? (
                 <span
-                  className="flex size-[1.05rem] items-center justify-center rounded-full bg-[#d6f5e8] text-[0.62rem] font-black text-[#15957d]"
+                  className="flex size-[1.05rem] shrink-0 items-center justify-center rounded-full bg-[#d6f5e8] text-[0.62rem] font-black text-[#15957d]"
                   title="對帳差額為零且確認日期在 30 天內"
                   aria-label="帳戶健康"
                 >
@@ -169,6 +168,7 @@ export function AccountCard({ account, ledgerDelta, onOpen }: Props) {
                 </span>
               ) : null}
             </span>
+            <span className="block text-right text-[0.68rem] font-bold text-slate-400">{account.currency}</span>
           </span>
           <span className="text-xl leading-none text-slate-300">›</span>
         </span>
