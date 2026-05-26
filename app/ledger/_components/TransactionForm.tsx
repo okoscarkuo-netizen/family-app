@@ -96,6 +96,7 @@ type Props = {
   rateTable?: TwdRateTable | null
   mode?: 'create' | 'edit'
   transaction?: FamilyTransaction | null
+  returnUrl?: string
 }
 
 function currentLocalDateTimeValue() {
@@ -2575,6 +2576,7 @@ export function TransactionForm({
   initialPreset,
   mode = 'create',
   transaction = null,
+  returnUrl,
 }: Props) {
   const isEditMode = mode === 'edit' && transaction != null
   const initialKind = (isEditMode ? transaction.kind : 'expense') as Kind
@@ -2864,7 +2866,7 @@ export function TransactionForm({
         return
       }
 
-      router.push(ledgerHrefForOccurredAt(occurredAt))
+      router.push(returnUrl ?? ledgerHrefForOccurredAt(occurredAt))
     } catch (error) {
       setMessage({
         tone: 'error',
@@ -2883,7 +2885,7 @@ export function TransactionForm({
     setMessage(null)
     try {
       await deleteTransaction(transaction.id)
-      router.push(ledgerHrefForOccurredAt(occurredAt))
+      router.push(returnUrl ?? ledgerHrefForOccurredAt(occurredAt))
     } catch (error) {
       setMessage({
         tone: 'error',

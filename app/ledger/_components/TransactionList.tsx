@@ -158,9 +158,10 @@ type Props = {
   transactions: FamilyTransaction[]
   accounts: LedgerAccount[]
   currentAccountId?: string
+  returnUrl?: string
 }
 
-export function TransactionList({ transactions, accounts, currentAccountId }: Props) {
+export function TransactionList({ transactions, accounts, currentAccountId, returnUrl }: Props) {
   if (transactions.length === 0) {
     return (
       <div className={`${softSurfaceClass} border-dashed text-center text-sm font-black text-slate-500`}>
@@ -186,7 +187,7 @@ export function TransactionList({ transactions, accounts, currentAccountId }: Pr
               return (
                 <Link
                   key={tx.id}
-                  href={`/ledger/${encodeURIComponent(tx.id)}/edit`}
+                  href={`/ledger/${encodeURIComponent(tx.id)}/edit${returnUrl ? `?from=${encodeURIComponent(returnUrl)}` : ''}`}
                   className="group flex items-start gap-2.5 px-4 py-1.5 transition hover:bg-[#fafaf8] active:bg-[#f4f4f2]"
                   aria-label={`查看 ${getTransactionTitle(tx, accountNames)}`}
                 >

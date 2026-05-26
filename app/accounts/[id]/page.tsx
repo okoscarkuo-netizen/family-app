@@ -164,6 +164,7 @@ export default async function AccountDetailPage({ params, searchParams }: PagePr
               transactions={transactions}
               accounts={ledgerAccounts}
               currentAccountId={account.id}
+              returnUrl={`/accounts/${encodeURIComponent(account.id)}`}
             />
           </div>
         </section>

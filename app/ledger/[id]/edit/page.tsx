@@ -38,10 +38,12 @@ function ledgerHrefForDate(date: string) {
 
 type PageProps = {
   params: Promise<{ id: string }>
+  searchParams: Promise<{ from?: string }>
 }
 
-export default async function EditTransactionPage({ params }: PageProps) {
+export default async function EditTransactionPage({ params, searchParams }: PageProps) {
   const { id } = await params
+  const { from } = await searchParams
   const transaction = await getTransactionById(decodeURIComponent(id))
   if (!transaction) notFound()
 
@@ -79,6 +81,7 @@ export default async function EditTransactionPage({ params }: PageProps) {
             rateTable={rateTable}
             mode="edit"
             transaction={transaction}
+            returnUrl={from}
           />
         </section>
       </main>
