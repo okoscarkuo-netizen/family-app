@@ -62,11 +62,11 @@ export function AccountLinkedBalanceFields({
   const parsedOpeningBalance = parseInput(openingValue)
 
   const pairState: PairState =
-    balanceValue.trim() === '' && dateValue === '' ? 'empty' :
     balanceValue.trim() !== '' && dateValue !== '' ? 'valid' :
+    balanceValue.trim() === '' && dateValue === '' ? 'empty' :
     'invalid'
 
-  const isPairValid = pairState !== 'invalid'
+  const isPairValid = pairState === 'valid'
 
   useEffect(() => {
     onValidityChange?.(isPairValid)
@@ -79,8 +79,7 @@ export function AccountLinkedBalanceFields({
 
   const pairBorderClass =
     pairState === 'valid' ? 'border-[#c5e8de] bg-[#f4fffb]' :
-    pairState === 'invalid' ? 'border-[#f2c7bf] bg-[#fff6f4]' :
-    'border-[#e4ddd5] bg-[#faf9f7]'
+    'border-[#f2c7bf] bg-[#fff6f4]'
 
   return (
     <div className="space-y-3">
@@ -89,19 +88,13 @@ export function AccountLinkedBalanceFields({
       <div className={`rounded-[1.1rem] border-2 px-3 py-3 transition-colors ${pairBorderClass}`}>
         <div className="mb-2.5 flex items-center justify-between">
           <p className="text-xs font-black text-slate-600">確認餘額</p>
-          {pairState === 'valid' && (
+          {pairState === 'valid' ? (
             <span className="rounded-full bg-[#d9f0e8] px-2 py-0.5 text-[0.65rem] font-black text-[#15957d]">
               已設定
             </span>
-          )}
-          {pairState === 'empty' && (
-            <span className="rounded-full bg-[#f0ede8] px-2 py-0.5 text-[0.65rem] font-black text-slate-400">
-              未設定
-            </span>
-          )}
-          {pairState === 'invalid' && (
+          ) : (
             <span className="rounded-full bg-[#fde8e4] px-2 py-0.5 text-[0.65rem] font-black text-[#c9563f]">
-              請補齊
+              必填
             </span>
           )}
         </div>
@@ -133,14 +126,14 @@ export function AccountLinkedBalanceFields({
           </label>
         </div>
 
-        {pairState === 'invalid' && (
+        {pairState !== 'valid' && (
           <p className="mt-2 text-[0.7rem] font-bold text-[#c9563f]">
-            金額與確認日期必須同時填寫，或同時留空
+            {pairState === 'invalid' ? '金額與確認日期必須同時填寫' : '請填寫金額與確認日期'}
           </p>
         )}
-        {pairState === 'empty' && (
-          <p className="mt-2 text-[0.68rem] font-medium text-slate-400">
-            填寫後，這個日期以前補記的交易不會影響餘額
+        {pairState === 'valid' && (
+          <p className="mt-2 text-[0.68rem] font-medium text-[#15957d]">
+            這個日期以前補記的交易不會影響餘額
           </p>
         )}
       </div>
