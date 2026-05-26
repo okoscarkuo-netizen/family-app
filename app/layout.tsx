@@ -35,12 +35,20 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const isPreview = process.env.VERCEL_ENV === 'preview'
+
   return (
     <html
       lang="zh-Hant"
       className={`${appFont.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        {isPreview && (
+          <div className="sticky top-0 z-[9999] flex items-center justify-center gap-2 bg-[#f59e0b] px-4 py-1.5 text-[0.72rem] font-black text-white shadow-sm">
+            <span>🚧</span>
+            <span>預覽模式 — 此為測試版本，非正式環境</span>
+          </div>
+        )}
         {children}
         <PwaRegister />
       </body>
