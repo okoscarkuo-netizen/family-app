@@ -6,6 +6,7 @@ import {
   type TwdRateSnapshot,
   type TwdRateTable,
 } from '@/lib/exchange-rates'
+import { AssetTrendChart } from './AssetTrendChart'
 
 type Props = {
   accounts: FamilyAccount[]
@@ -325,53 +326,15 @@ export function AssetTrendCard({ accounts, transactions, rateTable }: Props) {
         </div>
 
         <div className="mt-4">
-          <svg
-            aria-label="資產走勢圖"
-            className="block h-60 w-full"
-            preserveAspectRatio="none"
-            role="img"
-            viewBox={`0 0 ${width} ${height}`}
-          >
-            <defs>
-              <linearGradient id="asset-trend-fill-home" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor="#17b79c" stopOpacity="0.08" />
-                <stop offset="100%" stopColor="#17b79c" stopOpacity="0.01" />
-              </linearGradient>
-            </defs>
-
-            <path d={areaPath} fill="url(#asset-trend-fill-home)" />
-            <path d={linePath} fill="none" stroke="#15957d" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" />
-            <line
-              x1={paddingX}
-              x2={width - paddingX}
-              y1={height - 24}
-              y2={height - 24}
-              stroke="#dfe7e3"
-              strokeWidth="0.8"
-            />
-            <circle
-              cx={coordinates[coordinates.length - 1].x}
-              cy={coordinates[coordinates.length - 1].y}
-              fill="#ffffff"
-              r="3.25"
-              stroke="#15957d"
-              strokeWidth="1.6"
-            />
-          </svg>
-          <div className="relative mt-1 h-6 px-1 text-[0.72rem] font-medium text-slate-400">
-            {monthTicks.map((tick, index) => (
-              <span
-                key={tick.label}
-                className="absolute whitespace-nowrap"
-                style={{
-                  left: index === 0 ? 0 : index === monthTicks.length - 1 ? '100%' : `${tick.position * 100}%`,
-                  transform: index === 0 ? 'translateX(0)' : index === monthTicks.length - 1 ? 'translateX(-100%)' : 'translateX(-50%)',
-                }}
-              >
-                {tick.label}
-              </span>
-            ))}
-          </div>
+          <AssetTrendChart
+            areaPath={areaPath}
+            coordinates={coordinates}
+            linePath={linePath}
+            monthTicks={monthTicks}
+            paddingX={paddingX}
+            svgHeight={height}
+            svgWidth={width}
+          />
         </div>
 
         <div className="mt-1 flex items-center justify-between gap-3">
