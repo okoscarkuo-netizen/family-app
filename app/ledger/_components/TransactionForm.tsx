@@ -3610,7 +3610,6 @@ export function TransactionForm({
                   </svg>
                 </button>
               </div>
-              {renderSubmitActions()}
               <div className="rounded-t-[1.8rem] border border-[#efe7db] bg-white/96 p-2.5 shadow-[0_-16px_36px_rgba(15,23,42,0.14)] backdrop-blur">
                 <div className="flex items-stretch gap-1.5">
                   <div className={`grid w-[4.1rem] shrink-0 ${availableKinds.length === 4 ? 'grid-rows-4' : 'grid-rows-3'} gap-1.5`}>
