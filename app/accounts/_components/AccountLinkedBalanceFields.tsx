@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { inputClass } from '@/components/PageShell'
 
-type PairState = 'empty' | 'valid' | 'invalid'
+type PairState = 'clean' | 'valid' | 'invalid'
 
 type Props = {
   balance: number
@@ -54,19 +54,31 @@ export function AccountLinkedBalanceFields({
   const safeLedgerDelta = useMemo(() => safeAmount(ledgerDelta), [ledgerDelta])
   const safeBalance = safeAmount(balance)
 
-  const [balanceValue, setBalanceValue] = useState(() => inputValue(safeBalance))
-  const [dateValue, setDateValue] = useState(balanceDate ?? '')
+  // 記錄初始值，用來偵測是否有修改
+  const initialBalanceStr = useMemo(() => inputValue(safeBalance), [safeBalance])
+  const initialDateStr = balanceDate ?? ''
+  const hadDateBefore = initialDateStr !== ''
+
+  const [balanceValue, setBalanceValue] = useState(initialBalanceStr)
+  const [dateValue, setDateValue] = useState(initialDateStr)
   const [openingValue, setOpeningValue] = useState(() => inputValue(0))
 
   const parsedBalance = parseInput(balanceValue)
   const parsedOpeningBalance = parseInput(openingValue)
 
-  const pairState: PairState =
-    balanceValue.trim() !== '' && dateValue !== '' ? 'valid' :
-    balanceValue.trim() === '' && dateValue === '' ? 'empty' :
-    'invalid'
+  const balanceDirty = balanceValue !== initialBalanceStr
+  const dateDirty = dateValue !== initialDateStr
 
-  const isPairValid = pairState === 'valid'
+  // 有設定過：改一個就要兩個都改；什麼都沒改也可以存（等同於不動）
+  // 沒設定過：兩個都填才算 valid
+  const pairState: PairState = hadDateBefore
+    ? (balanceDirty === dateDirty ? 'clean' : 'invalid')
+    : (balanceValue.trim() !== '' && dateValue !== '' ? 'valid' : 'invalid')
+
+  // clean = 之前有設定、這次沒改 → 可以存（儲存的是舊值）
+  // valid = 兩個都有改 → 可以存
+  // invalid = 只改一個 → 不能存
+  const isPairValid = pairState !== 'invalid'
 
   useEffect(() => {
     onValidityChange?.(isPairValid)
@@ -78,25 +90,24 @@ export function AccountLinkedBalanceFields({
       : null
 
   const pairBorderClass =
-    pairState === 'valid' ? 'border-[#c5e8de] bg-[#f4fffb]' :
-    'border-[#f2c7bf] bg-[#fff6f4]'
+    pairState === 'invalid' ? 'border-[#f2c7bf] bg-[#fff6f4]' :
+    (hadDateBefore && !balanceDirty && !dateDirty) || pairState === 'valid' ? 'border-[#c5e8de] bg-[#f4fffb]' :
+    'border-[#e4ddd5] bg-[#faf9f7]'
+
+  const badgeEl = pairState === 'invalid'
+    ? <span className="rounded-full bg-[#fde8e4] px-2 py-0.5 text-[0.65rem] font-black text-[#c9563f]">請補齊</span>
+    : hadDateBefore
+      ? <span className="rounded-full bg-[#d9f0e8] px-2 py-0.5 text-[0.65rem] font-black text-[#15957d]">{balanceDirty ? '已更新' : '已設定'}</span>
+      : <span className="rounded-full bg-[#f0ede8] px-2 py-0.5 text-[0.65rem] font-black text-slate-400">必填</span>
 
   return (
     <div className="space-y-3">
 
-      {/* 確認餘額群組 — balance + date 必須同時填或同時空 */}
+      {/* 確認餘額群組 */}
       <div className={`rounded-[1.1rem] border-2 px-3 py-3 transition-colors ${pairBorderClass}`}>
         <div className="mb-2.5 flex items-center justify-between">
           <p className="text-xs font-black text-slate-600">確認餘額</p>
-          {pairState === 'valid' ? (
-            <span className="rounded-full bg-[#d9f0e8] px-2 py-0.5 text-[0.65rem] font-black text-[#15957d]">
-              已設定
-            </span>
-          ) : (
-            <span className="rounded-full bg-[#fde8e4] px-2 py-0.5 text-[0.65rem] font-black text-[#c9563f]">
-              必填
-            </span>
-          )}
+          {badgeEl}
         </div>
 
         <div className="grid grid-cols-2 gap-2">
@@ -126,16 +137,11 @@ export function AccountLinkedBalanceFields({
           </label>
         </div>
 
-        {pairState !== 'valid' && (
-          <p className="mt-2 text-[0.7rem] font-bold text-[#c9563f]">
-            {pairState === 'invalid' ? '金額與確認日期必須同時填寫' : '請填寫金額與確認日期'}
-          </p>
-        )}
-        {pairState === 'valid' && (
-          <p className="mt-2 text-[0.68rem] font-medium text-[#15957d]">
-            這個日期以前補記的交易不會影響餘額
-          </p>
-        )}
+        <p className="mt-2 text-[0.68rem] font-medium text-slate-400">
+          {pairState === 'invalid'
+            ? '金額與確認日期必須同時修改'
+            : '這個日期以前補記的交易不會影響餘額'}
+        </p>
       </div>
 
       {/* 初始金額 */}
