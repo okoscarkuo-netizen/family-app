@@ -4,6 +4,7 @@ const CBC_DAILY_RATES_URL =
   'https://www.cbc.gov.tw/public/data/OpenData/%E7%B6%93%E7%A0%94%E8%99%95/BP01D01.csv'
 
 const RATE_REVALIDATE_SECONDS = 60 * 60
+const MAX_STALENESS_DAYS = 4
 const RATE_SNAPSHOT_TABLE = 'exchange_rate_snapshots'
 
 export type TwdRateSnapshot = {
@@ -211,12 +212,15 @@ async function getStoredRateTable() {
   const { data, error } = await supabase
     .from(RATE_SNAPSHOT_TABLE)
     .select('snapshot_date, source_date, source, rates, checked_at, updated_at')
-    .order('snapshot_date', { ascending: true })
+    .order('snapshot_date', { ascending: false })
+    .limit(400)
 
   if (error || !data?.length) return null
 
   return buildRateTableFromRows(data as ExchangeRateSnapshotRow[])
 }
+
+const STORE_DAYS_LIMIT = 400
 
 async function storeRateTable(table: TwdRateTable) {
   const supabase = createAdminClient()
@@ -225,7 +229,8 @@ async function storeRateTable(table: TwdRateTable) {
   }
 
   const checkedAt = table.checkedAt || new Date().toISOString()
-  const rows = table.dates
+  const recentDates = table.dates.slice(-STORE_DAYS_LIMIT)
+  const rows = recentDates
     .map((date) => {
       const snapshot = table.byDate[date]
       if (!snapshot) return null
@@ -261,9 +266,17 @@ export async function refreshTwdRateTable(): Promise<TwdRateTable> {
   return table
 }
 
+function isStale(table: TwdRateTable): boolean {
+  const latestDate = table.latest.date
+  if (!latestDate || latestDate === fallbackSnapshot.date) return true
+  const today = new Date().toISOString().slice(0, 10)
+  const diffMs = new Date(today).getTime() - new Date(latestDate).getTime()
+  return diffMs > MAX_STALENESS_DAYS * 24 * 60 * 60 * 1000
+}
+
 export async function getTwdRateTable(): Promise<TwdRateTable> {
   const stored = await getStoredRateTable()
-  if (stored) return stored
+  if (stored && !isStale(stored)) return stored
 
   const table = await fetchCbcRateTable()
 

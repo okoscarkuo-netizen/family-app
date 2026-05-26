@@ -4,13 +4,10 @@ type Props = {
   rateTable: TwdRateTable
 }
 
-const rateCurrencies = ['USD', 'JPY'] as const
-
-function formatRate(value: number, currency: string) {
-  const digits = currency === 'JPY' ? 4 : 2
+function formatRate(value: number) {
   return new Intl.NumberFormat('zh-TW', {
-    maximumFractionDigits: digits,
-    minimumFractionDigits: digits,
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
   }).format(value)
 }
 
@@ -48,7 +45,6 @@ function sourceBadge(snapshot: TwdRateSnapshot) {
 export function ExchangeRateCard({ rateTable }: Props) {
   const snapshot = rateTable.latest
   const usdRate = snapshot.rates.USD
-  const availableRates = rateCurrencies.filter((currency) => Number.isFinite(snapshot.rates[currency]))
 
   return (
     <section className="rounded-[1.35rem] border border-[#ece4d8] bg-white px-4 py-4 shadow-[0_10px_28px_rgba(15,23,42,0.06)]">
@@ -65,7 +61,7 @@ export function ExchangeRateCard({ rateTable }: Props) {
       <div className="mt-4 border-b border-[#f1eee9] pb-4">
         <p className="text-[0.68rem] font-bold text-slate-400">USD/TWD</p>
         <p className="mt-1 text-[2.35rem] font-semibold leading-none tracking-normal text-slate-950">
-          {Number.isFinite(usdRate) ? `NT$${formatRate(usdRate, 'USD')}` : '暫無資料'}
+          {Number.isFinite(usdRate) ? `NT$${formatRate(usdRate)}` : '暫無資料'}
         </p>
       </div>
 
@@ -78,15 +74,6 @@ export function ExchangeRateCard({ rateTable }: Props) {
           <p className="text-[0.68rem] font-bold text-slate-400">系統更新</p>
           <p className="mt-1 text-[0.9rem] font-black text-slate-700">{formatCheckedAt(rateTable.checkedAt)}</p>
         </div>
-      </div>
-
-      <div className="mt-4 grid grid-cols-3 gap-2 border-t border-[#f1eee9] pt-3">
-        {availableRates.map((currency) => (
-          <div key={currency}>
-            <p className="text-[0.62rem] font-black text-slate-400">1 {currency}</p>
-            <p className="mt-1 text-[0.78rem] font-black text-slate-700">NT${formatRate(snapshot.rates[currency], currency)}</p>
-          </div>
-        ))}
       </div>
 
       {rateTable.officialLatestDate && (
