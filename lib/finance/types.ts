@@ -65,6 +65,7 @@ export type FamilyAccount = {
   kind: AccountKind;
   balance: number;
   openingBalance?: number;
+  balanceDate?: string | null;
   remark?: string;
   currency: string;
   group?: AccountGroup;

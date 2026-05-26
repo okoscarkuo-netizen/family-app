@@ -7,6 +7,7 @@ type Props = {
   balance: number
   openingBalance?: number
   ledgerDelta: number
+  balanceDate?: string | null
   currentLabel?: string
   openingLabel?: string
   reconcileLabel?: string
@@ -43,6 +44,7 @@ function parseInput(value: string) {
 export function AccountLinkedBalanceFields({
   balance,
   ledgerDelta,
+  balanceDate,
   currentLabel = '目前金額',
   openingLabel = '初始金額',
   reconcileLabel = '對帳差額',
@@ -81,6 +83,19 @@ export function AccountLinkedBalanceFields({
             onChange={(event) => handleBalanceChange(event.target.value)}
             className={`mt-1 ${inputClass}`}
           />
+        </label>
+
+        <label className="block">
+          <span className="text-xs font-black text-slate-600">確認日期</span>
+          <input
+            name="balance_date"
+            type="date"
+            defaultValue={balanceDate ?? ''}
+            className={`mt-1 ${inputClass}`}
+          />
+          <span className="mt-0.5 block text-[0.66rem] font-medium text-slate-400">
+            這個金額是哪天對到的
+          </span>
         </label>
 
         <label className="block">

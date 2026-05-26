@@ -6,6 +6,7 @@ import {
   supportsFavoriteColumn,
   supportsOpeningBalanceColumn,
   supportsRemarkColumn,
+  supportsBalanceDateColumn,
 } from '@/lib/accounts-db'
 import {
   setFavoriteAccountForHousehold,
@@ -271,12 +272,20 @@ export async function archiveAccount(id: string) {
 export async function setAccountBalance(id: string, formData: FormData) {
   const supabase = createAdminClient()
   if (!supabase) throw new Error('資料庫連線失敗')
-  const supportsOpeningBalance = await supportsOpeningBalanceColumn()
+  const [supportsOpeningBalance, supportsBalanceDate] = await Promise.all([
+    supportsOpeningBalanceColumn(),
+    supportsBalanceDateColumn(),
+  ])
   const { balance, openingBalance } = readBalanceInputs(formData)
-  const updates: Record<string, number> = { balance }
+  const updates: Record<string, number | string | null> = { balance }
 
   if (supportsOpeningBalance) {
     updates.opening_balance = openingBalance
+  }
+
+  if (supportsBalanceDate) {
+    const rawDate = getString(formData, 'balance_date')
+    updates.balance_date = rawDate || null
   }
 
   const { error } = await supabase.from('family_accounts').update(updates).eq('id', id)

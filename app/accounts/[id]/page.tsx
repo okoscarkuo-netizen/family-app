@@ -162,6 +162,7 @@ export default async function AccountDetailPage({ params, searchParams }: PagePr
                     name: account.name,
                     balance: account.balance,
                     openingBalance: account.openingBalance,
+                    balanceDate: account.balanceDate,
                     currency: account.currency,
                     kind: account.kind,
                   }}

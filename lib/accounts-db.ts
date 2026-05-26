@@ -12,6 +12,7 @@ import {
 let openingBalanceColumnSupported: boolean | null = null
 let remarkColumnSupported: boolean | null = null
 let favoriteColumnSupported: boolean | null = null
+let balanceDateColumnSupported: boolean | null = null
 const LEDGER_DELTA_PAGE_SIZE = 1000
 
 async function probeColumn(column: string): Promise<boolean> {
@@ -41,6 +42,12 @@ export async function supportsFavoriteColumn(): Promise<boolean> {
   if (favoriteColumnSupported !== null) return favoriteColumnSupported
   favoriteColumnSupported = await probeColumn('favorite')
   return favoriteColumnSupported
+}
+
+export async function supportsBalanceDateColumn(): Promise<boolean> {
+  if (balanceDateColumnSupported !== null) return balanceDateColumnSupported
+  balanceDateColumnSupported = await probeColumn('balance_date')
+  return balanceDateColumnSupported
 }
 
 export async function getAccounts(): Promise<FamilyAccount[]> {

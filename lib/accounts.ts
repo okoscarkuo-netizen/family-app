@@ -13,6 +13,7 @@ export type AccountRow = {
   kind: AccountKind;
   balance: number | string;
   opening_balance?: number | string;
+  balance_date?: string | null;
   remark?: string | null;
   currency: string;
   hidden?: boolean | null;
@@ -61,6 +62,7 @@ export function normalizeAccount(account: Partial<FamilyAccount>, index = 0): Fa
     kind,
     balance: cleanBalance(account.balance),
     openingBalance: cleanBalance(account.openingBalance ?? account.balance),
+    ...(account.balanceDate ? { balanceDate: account.balanceDate } : {}),
     ...(remark ? { remark } : {}),
     currency,
     hidden: Boolean(account.hidden),
@@ -99,6 +101,7 @@ export function accountFromRow(
     kind: row.kind,
     balance: Number(row.balance),
     openingBalance,
+    balanceDate: row.balance_date ?? undefined,
     remark: row.remark ?? undefined,
     currency: row.currency,
     hidden: Boolean(row.hidden),

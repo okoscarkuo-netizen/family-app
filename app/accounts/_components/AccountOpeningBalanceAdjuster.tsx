@@ -13,7 +13,7 @@ import { AccountLinkedBalanceFields } from './AccountLinkedBalanceFields'
 const LONG_PRESS_MS = 3000
 
 type Props = {
-  account: Pick<FamilyAccount, 'id' | 'name' | 'balance' | 'openingBalance' | 'currency' | 'kind'>
+  account: Pick<FamilyAccount, 'id' | 'name' | 'balance' | 'openingBalance' | 'balanceDate' | 'currency' | 'kind'>
   ledgerDelta: number
 }
 
@@ -119,6 +119,11 @@ export function AccountOpeningBalanceAdjuster({ account, ledgerDelta }: Props) {
           </span>
           <span className="pb-1 text-base font-bold text-slate-400">{account.currency}</span>
         </span>
+        {account.balanceDate ? (
+          <span className="mt-0.5 block text-[0.68rem] font-bold text-slate-400">
+            確認日期 {account.balanceDate}
+          </span>
+        ) : null}
         <span className="sr-only">長按 3 秒開啟目前金額、初始金額與對帳差額調整</span>
         {isHolding ? (
           <span className="mt-2 block text-[0.68rem] font-bold text-slate-400">
@@ -174,6 +179,7 @@ export function AccountOpeningBalanceAdjuster({ account, ledgerDelta }: Props) {
                   balance={account.balance}
                   openingBalance={account.openingBalance}
                   ledgerDelta={ledgerDelta}
+                  balanceDate={account.balanceDate}
                   currentLabel="目前金額"
                   openingLabel="初始金額"
                   reconcileLabel="對帳差額"
