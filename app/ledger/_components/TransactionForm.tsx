@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { KeyboardEvent, PointerEvent } from 'react'
 import { useRouter } from 'next/navigation'
@@ -745,6 +745,83 @@ function TransferAccountPairRow({
         />
       </div>
     </div>
+  )
+}
+
+function TransferAccountRow({
+  label,
+  value,
+  selectedValue,
+  onChange,
+  options,
+}: {
+  label: string
+  value: string
+  selectedValue: string
+  onChange: (value: string) => void
+  options: Array<SelectOption | SelectOptionGroup>
+}) {
+  const valueRef = useRef<HTMLSpanElement>(null)
+
+  useLayoutEffect(() => {
+    const el = valueRef.current
+    if (!el) return
+    const maxRem = 1.05
+    const minRem = 0.68
+    const step = 0.02
+    const fit = () => {
+      el.style.fontSize = `${maxRem}rem`
+      let cur = maxRem
+      while (el.scrollWidth > el.clientWidth && cur > minRem) {
+        cur = Math.max(minRem, Number((cur - step).toFixed(2)))
+        el.style.fontSize = `${cur}rem`
+      }
+    }
+    fit()
+    const obs = new ResizeObserver(() => requestAnimationFrame(fit))
+    obs.observe(el)
+    if (el.parentElement) obs.observe(el.parentElement)
+    return () => obs.disconnect()
+  }, [value])
+
+  return (
+    <label className="relative flex min-h-[4.75rem] items-center justify-between gap-4 px-5">
+      <FieldLabel tone="bg-[#f0b542]" label={label} />
+      <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
+        <span
+          ref={valueRef}
+          className={`block min-w-0 whitespace-nowrap font-black ${
+            selectedValue ? 'text-slate-950' : 'text-slate-400'
+          }`}
+          style={{ fontSize: '1.05rem' }}
+        >
+          {value}
+        </span>
+        <span className="shrink-0 text-lg text-slate-300">›</span>
+      </div>
+      <select
+        value={selectedValue}
+        onChange={(event) => onChange(event.target.value)}
+        className="absolute inset-0 cursor-pointer opacity-0"
+        aria-label={label}
+      >
+        {options.map((option) =>
+          'options' in option ? (
+            <optgroup key={option.label} label={option.label}>
+              {option.options.map((groupedOption) => (
+                <option key={groupedOption.value || '__empty'} value={groupedOption.value}>
+                  {groupedOption.label}
+                </option>
+              ))}
+            </optgroup>
+          ) : (
+            <option key={option.value || '__empty'} value={option.value}>
+              {option.label}
+            </option>
+          ),
+        )}
+      </select>
+    </label>
   )
 }
 
@@ -3261,8 +3338,8 @@ export function TransactionForm({
           aria-label={`${KIND_LABELS[pageKind]} 頁`}
         >
           <section className="overflow-hidden rounded-[1.75rem] bg-white px-4 pb-4 pt-4 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
-            <div className="mt-4">
-              {transferIsCrossCurrency ? (
+            {transferIsCrossCurrency ? (
+              <div className="mt-4">
                 <TransferAmountPairRow
                   sourceAmount={amount}
                   sourceCurrency={transferSourceCurrency}
@@ -3278,42 +3355,81 @@ export function TransactionForm({
                     setIsKeypadVisible(true)
                   }}
                 />
-              ) : (
-                <TransferAmountSingleRow
-                  amount={amount}
-                  currency={transferSourceCurrency}
-                  onOpen={() => {
+              </div>
+            ) : (
+              <div className="flex items-start justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
                     setActiveTransferAmountSide('source')
                     setIsKeypadVisible(true)
                   }}
-                />
-              )}
-            </div>
-
+                  className={`block text-left font-black ${amountDisplayClass(pageKind)} ${amountAccentClass(pageKind)}`}
+                  aria-label="開啟轉帳數字鍵盤"
+                >
+                  {formatAmountDisplay(amount)}
+                </button>
+                <label className="relative inline-flex items-center gap-2 rounded-full bg-[#f4f1ea] px-3 py-2 text-sm font-black text-slate-600">
+                  <span>{currency}</span>
+                  <span className="text-slate-300">▾</span>
+                  <select
+                    value={currency}
+                    onChange={(event) => {
+                      const value = event.target.value
+                      if (isCurrency(value)) setCurrency(value)
+                    }}
+                    className="absolute inset-0 cursor-pointer opacity-0"
+                    aria-label="幣別"
+                  >
+                    {CURRENCIES.map((item) => (
+                      <option key={item} value={item}>
+                        {item}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            )}
             <div className={`mt-3 h-1 rounded-full ${amountLineClass(pageKind)}`} />
+          </section>
 
-            <div className="mt-4 space-y-3">
-              <TransferAccountPairRow
-                sourceValue={selectedAccount ? formatAccountLabel(selectedAccount) : '選擇來源帳戶'}
-                sourceSelectedValue={resolvedAccountId}
-                sourceOptions={[
-                  { value: '', label: '選擇來源帳戶' },
-                  ...accountOptions,
-                ]}
-                onSourceChange={handleTransferSourceChange}
-                targetValue={selectedToAccount ? formatAccountLabel(selectedToAccount) : '選擇目標帳戶'}
-                targetSelectedValue={resolvedToAccountId}
-                targetOptions={[
-                  { value: '', label: '選擇目標帳戶' },
-                  ...accountOptions,
-                ]}
-                onTargetChange={handleTransferTargetChange}
-                onSwap={swapTransferAccounts}
-              />
-
-              <TransferDateRow value={occurredAt} onChange={setOccurredAt} />
-              <TransferNoteRow value={note} onChange={setNote} />
+          <section className="mt-4 overflow-hidden rounded-[2rem] bg-white shadow-[0_20px_50px_rgba(15,23,42,0.08)]">
+            <TransferAccountRow
+              label="轉出"
+              value={selectedAccount ? formatAccountLabel(selectedAccount) : '選擇轉出帳戶'}
+              selectedValue={resolvedAccountId}
+              onChange={handleTransferSourceChange}
+              options={[{ value: '', label: '選擇轉出帳戶' }, ...accountOptions]}
+            />
+            <div className="flex items-center px-5">
+              <div className="h-px flex-1 bg-[#efebe4]" />
+              <button
+                type="button"
+                onClick={swapTransferAccounts}
+                className="mx-3 flex size-7 shrink-0 items-center justify-center rounded-full border border-[#ece4d8] bg-[#fdf9f4] text-base text-[#d18c11] transition hover:bg-[#fff8e7]"
+                aria-label="交換轉出與轉入帳戶"
+              >
+                ⇅
+              </button>
+              <div className="h-px flex-1 bg-[#efebe4]" />
             </div>
+            <TransferAccountRow
+              label="轉入"
+              value={selectedToAccount ? formatAccountLabel(selectedToAccount) : '選擇轉入帳戶'}
+              selectedValue={resolvedToAccountId}
+              onChange={handleTransferTargetChange}
+              options={[{ value: '', label: '選擇轉入帳戶' }, ...accountOptions]}
+            />
+            <div className="mx-5 h-px bg-[#efebe4]" />
+            <DateFieldRow value={occurredAt} onChange={setOccurredAt} />
+            <div className="mx-5 h-px bg-[#efebe4]" />
+            <TextFieldRow
+              tone="bg-[#8f86f2]"
+              label="備註"
+              placeholder="補充說明（選填）"
+              value={note}
+              onChange={setNote}
+            />
           </section>
         </article>
       )
