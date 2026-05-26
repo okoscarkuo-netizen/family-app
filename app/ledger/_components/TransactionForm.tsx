@@ -88,7 +88,7 @@ type SelectOptionGroup = {
 }
 
 type Props = {
-  accounts: Pick<FamilyAccount, 'id' | 'name' | 'currency' | 'kind' | 'balance' | 'owner' | 'shared' | 'type'>[]
+  accounts: Pick<FamilyAccount, 'id' | 'name' | 'currency' | 'kind' | 'balance' | 'owner' | 'shared' | 'type' | 'favorite'>[]
   categories: FamilyCategory[]
   merchants: FamilyMerchant[]
   merchantGroups: FamilyMerchantGroup[]
@@ -152,12 +152,15 @@ function isInteractiveElement(target: EventTarget | null) {
 }
 
 function buildAccountOptions(
-  accounts: Pick<FamilyAccount, 'id' | 'name' | 'currency' | 'owner' | 'shared'>[],
+  accounts: Pick<FamilyAccount, 'id' | 'name' | 'currency' | 'owner' | 'shared' | 'favorite'>[],
 ) {
+  const favorites = accounts.filter((account) => account.favorite)
+  const nonFavorites = accounts.filter((account) => !account.favorite)
+
   const grouped = new Map<string, SelectOption[]>()
   const groupOrder = ['共通帳戶', 'Oscar', 'Livia']
 
-  for (const account of accounts) {
+  for (const account of nonFavorites) {
     const label = getAccountGroupLabel(account)
     const options = grouped.get(label) ?? []
     options.push({
@@ -167,13 +170,29 @@ function buildAccountOptions(
     grouped.set(label, options)
   }
 
-  return groupOrder
-    .map((label) => {
-      const options = grouped.get(label)
-      if (!options?.length) return null
-      return { label, options }
+  const result: SelectOptionGroup[] = []
+
+  if (favorites.length > 0) {
+    result.push({
+      label: '★ 我的最愛',
+      options: favorites.map((account) => ({
+        value: account.id,
+        label: `★ ${formatAccountLabel(account)}`,
+      })),
     })
-    .filter((group): group is SelectOptionGroup => Boolean(group))
+  }
+
+  result.push(
+    ...groupOrder
+      .map((label) => {
+        const options = grouped.get(label)
+        if (!options?.length) return null
+        return { label, options }
+      })
+      .filter((group): group is SelectOptionGroup => Boolean(group)),
+  )
+
+  return result
 }
 
 function buildReminderAccountOptions(
