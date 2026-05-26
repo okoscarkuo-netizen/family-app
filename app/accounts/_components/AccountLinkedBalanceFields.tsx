@@ -1,7 +1,9 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { inputClass } from '@/components/PageShell'
+
+type PairState = 'empty' | 'valid' | 'invalid'
 
 type Props = {
   balance: number
@@ -12,6 +14,7 @@ type Props = {
   openingLabel?: string
   reconcileLabel?: string
   compact?: boolean
+  onValidityChange?: (valid: boolean) => void
 }
 
 function roundAmount(value: number) {
@@ -36,7 +39,6 @@ function formatAmount(value: number) {
 
 function parseInput(value: string) {
   if (value.trim() === '') return null
-
   const amount = Number(value)
   return Number.isFinite(amount) ? amount : null
 }
@@ -45,73 +47,119 @@ export function AccountLinkedBalanceFields({
   balance,
   ledgerDelta,
   balanceDate,
-  currentLabel = '目前金額',
   openingLabel = '初始金額',
   reconcileLabel = '對帳差額',
-  compact = false,
+  onValidityChange,
 }: Props) {
   const safeLedgerDelta = useMemo(() => safeAmount(ledgerDelta), [ledgerDelta])
   const safeBalance = safeAmount(balance)
+
   const [balanceValue, setBalanceValue] = useState(() => inputValue(safeBalance))
+  const [dateValue, setDateValue] = useState(balanceDate ?? '')
   const [openingValue, setOpeningValue] = useState(() => inputValue(0))
+
   const parsedBalance = parseInput(balanceValue)
   const parsedOpeningBalance = parseInput(openingValue)
+
+  const pairState: PairState =
+    balanceValue.trim() === '' && dateValue === '' ? 'empty' :
+    balanceValue.trim() !== '' && dateValue !== '' ? 'valid' :
+    'invalid'
+
+  const isPairValid = pairState !== 'invalid'
+
+  useEffect(() => {
+    onValidityChange?.(isPairValid)
+  }, [isPairValid, onValidityChange])
+
   const reconcileDifference =
     parsedBalance !== null && parsedOpeningBalance !== null
       ? roundAmount(parsedBalance - parsedOpeningBalance - safeLedgerDelta)
       : null
 
-  function handleBalanceChange(value: string) {
-    setBalanceValue(value)
-  }
-
-  function handleOpeningBalanceChange(value: string) {
-    setOpeningValue(value)
-  }
+  const pairBorderClass =
+    pairState === 'valid' ? 'border-[#c5e8de] bg-[#f4fffb]' :
+    pairState === 'invalid' ? 'border-[#f2c7bf] bg-[#fff6f4]' :
+    'border-[#e4ddd5] bg-[#faf9f7]'
 
   return (
     <div className="space-y-3">
-      <div className={compact ? 'grid grid-cols-1 gap-3' : 'grid grid-cols-1 gap-3 sm:grid-cols-2'}>
-        <label className="block">
-          <span className="text-xs font-black text-slate-600">{currentLabel}</span>
-          <input
-            name="balance"
-            type="number"
-            step="0.01"
-            inputMode="decimal"
-            value={balanceValue}
-            onChange={(event) => handleBalanceChange(event.target.value)}
-            className={`mt-1 ${inputClass}`}
-          />
-        </label>
 
-        <label className="block">
-          <span className="text-xs font-black text-slate-600">確認日期</span>
-          <input
-            name="balance_date"
-            type="date"
-            defaultValue={balanceDate ?? ''}
-            className={`mt-1 ${inputClass}`}
-          />
-          <span className="mt-0.5 block text-[0.66rem] font-medium text-slate-400">
-            這個金額是哪天對到的
-          </span>
-        </label>
+      {/* 確認餘額群組 — balance + date 必須同時填或同時空 */}
+      <div className={`rounded-[1.1rem] border-2 px-3 py-3 transition-colors ${pairBorderClass}`}>
+        <div className="mb-2.5 flex items-center justify-between">
+          <p className="text-xs font-black text-slate-600">確認餘額</p>
+          {pairState === 'valid' && (
+            <span className="rounded-full bg-[#d9f0e8] px-2 py-0.5 text-[0.65rem] font-black text-[#15957d]">
+              已設定
+            </span>
+          )}
+          {pairState === 'empty' && (
+            <span className="rounded-full bg-[#f0ede8] px-2 py-0.5 text-[0.65rem] font-black text-slate-400">
+              未設定
+            </span>
+          )}
+          {pairState === 'invalid' && (
+            <span className="rounded-full bg-[#fde8e4] px-2 py-0.5 text-[0.65rem] font-black text-[#c9563f]">
+              請補齊
+            </span>
+          )}
+        </div>
 
-        <label className="block">
-          <span className="text-xs font-black text-slate-600">{openingLabel}</span>
-          <input
-            name="opening_balance"
-            type="number"
-            step="0.01"
-            inputMode="decimal"
-            value={openingValue}
-            onChange={(event) => handleOpeningBalanceChange(event.target.value)}
-            className={`mt-1 ${inputClass}`}
-          />
-        </label>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="block">
+            <span className="text-[0.7rem] font-bold text-slate-500">金額</span>
+            <input
+              name="balance"
+              type="number"
+              step="0.01"
+              inputMode="decimal"
+              value={balanceValue}
+              onChange={(e) => setBalanceValue(e.target.value)}
+              placeholder="0.00"
+              className={`mt-1 ${inputClass}`}
+            />
+          </label>
+
+          <label className="block">
+            <span className="text-[0.7rem] font-bold text-slate-500">確認日期</span>
+            <input
+              name="balance_date"
+              type="date"
+              value={dateValue}
+              onChange={(e) => setDateValue(e.target.value)}
+              className={`mt-1 ${inputClass}`}
+            />
+          </label>
+        </div>
+
+        {pairState === 'invalid' && (
+          <p className="mt-2 text-[0.7rem] font-bold text-[#c9563f]">
+            金額與確認日期必須同時填寫，或同時留空
+          </p>
+        )}
+        {pairState === 'empty' && (
+          <p className="mt-2 text-[0.68rem] font-medium text-slate-400">
+            填寫後，這個日期以前補記的交易不會影響餘額
+          </p>
+        )}
       </div>
 
+      {/* 初始金額 */}
+      <label className="block">
+        <span className="text-xs font-black text-slate-600">{openingLabel}</span>
+        <input
+          name="opening_balance"
+          type="number"
+          step="0.01"
+          inputMode="decimal"
+          value={openingValue}
+          onChange={(e) => setOpeningValue(e.target.value)}
+          className={`mt-1 ${inputClass}`}
+        />
+      </label>
+
+      {/* 對帳差額 */}
       <div
         className={`rounded-[1rem] border px-3 py-2 ${
           reconcileDifference === null

@@ -30,6 +30,7 @@ export function AccountOpeningBalanceAdjuster({ account, ledgerDelta }: Props) {
   const [isHolding, setIsHolding] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isPending, startTransition] = useTransition()
+  const [isPairValid, setIsPairValid] = useState(true)
   const timerRef = useRef<number | null>(null)
   const formRef = useRef<HTMLFormElement | null>(null)
 
@@ -184,6 +185,7 @@ export function AccountOpeningBalanceAdjuster({ account, ledgerDelta }: Props) {
                   openingLabel="初始金額"
                   reconcileLabel="對帳差額"
                   compact
+                  onValidityChange={setIsPairValid}
                 />
 
                 <p className="text-xs font-bold text-slate-400">
@@ -203,7 +205,7 @@ export function AccountOpeningBalanceAdjuster({ account, ledgerDelta }: Props) {
                   </button>
                   <button
                     type="submit"
-                    disabled={isPending}
+                    disabled={isPending || !isPairValid}
                     className={`${primaryButtonClass} disabled:opacity-50`}
                   >
                     {isPending ? '儲存中…' : '套用調整'}
