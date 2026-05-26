@@ -17,6 +17,7 @@ import { pinCashAccount, reorderAccounts } from '@/app/actions/accounts'
 
 type Props = {
   accounts: FamilyAccount[]
+  ledgerDeltas?: Record<string, number>
 }
 
 type Owner = 'Oscar' | 'Livia'
@@ -436,10 +437,12 @@ function AccountToolsMenu({
 
 function FavoriteAccountSection({
   accounts,
+  ledgerDeltas,
   onPinCash,
   pinDisabled,
 }: {
   accounts: FamilyAccount[]
+  ledgerDeltas?: Record<string, number>
   onPinCash: (account: FamilyAccount) => void
   pinDisabled: boolean
 }) {
@@ -462,6 +465,7 @@ function FavoriteAccountSection({
           <AccountCard
             key={account.id}
             account={account}
+            ledgerDelta={ledgerDeltas?.[account.id]}
             onPinCash={onPinCash}
             pinDisabled={pinDisabled}
           />
@@ -627,12 +631,14 @@ function AccountSortModal({
 
 function AccountGroupSections({
   accounts,
+  ledgerDeltas,
   emptyMessage,
   idPrefix,
   onPinCash,
   pinDisabled,
 }: {
   accounts: FamilyAccount[]
+  ledgerDeltas?: Record<string, number>
   emptyMessage: string
   idPrefix: string
   onPinCash: (account: FamilyAccount) => void
@@ -664,6 +670,7 @@ function AccountGroupSections({
               <AccountCard
                 key={account.id}
                 account={account}
+                ledgerDelta={ledgerDeltas?.[account.id]}
                 onPinCash={onPinCash}
                 pinDisabled={pinDisabled}
               />
@@ -675,7 +682,7 @@ function AccountGroupSections({
   )
 }
 
-export function AccountList({ accounts }: Props) {
+export function AccountList({ accounts, ledgerDeltas }: Props) {
   const router = useRouter()
   const ownerSwipeStartRef = useRef<{ pointerId: number; x: number; y: number } | null>(null)
   const suppressOwnerSwipeClickRef = useRef(false)
@@ -868,6 +875,7 @@ export function AccountList({ accounts }: Props) {
         <div className="mt-4 space-y-3">
           <FavoriteAccountSection
             accounts={favoriteAccounts}
+            ledgerDeltas={ledgerDeltas}
             onPinCash={handlePinCash}
             pinDisabled={isPinPending}
           />
@@ -875,6 +883,7 @@ export function AccountList({ accounts }: Props) {
           {regularAccounts.length > 0 ? (
             <AccountGroupSections
               accounts={regularAccounts}
+              ledgerDeltas={ledgerDeltas}
               emptyMessage=""
               idPrefix="account-group"
               onPinCash={handlePinCash}

@@ -180,3 +180,36 @@ export async function getAccountLedgerDelta(id: string): Promise<number> {
 
   return Math.round(total * 100) / 100
 }
+
+export async function getAllAccountLedgerDeltas(): Promise<Record<string, number>> {
+  const supabase = createAdminClient()
+  if (!supabase) return {}
+
+  const result: Record<string, number> = {}
+  let from = 0
+
+  while (true) {
+    const { data, error } = await supabase
+      .from('family_ledger_entries')
+      .select('account_id, amount_delta')
+      .range(from, from + LEDGER_DELTA_PAGE_SIZE - 1)
+
+    if (error) {
+      console.error('[accounts-db] getAllAccountLedgerDeltas error:', error)
+      return {}
+    }
+
+    for (const row of data ?? []) {
+      if (!row.account_id) continue
+      const amount = Number(row.amount_delta)
+      if (Number.isFinite(amount)) {
+        result[row.account_id] = Math.round(((result[row.account_id] ?? 0) + amount) * 100) / 100
+      }
+    }
+
+    if (!data || data.length < LEDGER_DELTA_PAGE_SIZE) break
+    from += LEDGER_DELTA_PAGE_SIZE
+  }
+
+  return result
+}

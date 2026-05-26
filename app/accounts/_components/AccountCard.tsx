@@ -7,9 +7,21 @@ import { getAccountGroup, getDisplayAccountBalance, isSharedAccount, normalizeOw
 
 type Props = {
   account: FamilyAccount
+  ledgerDelta?: number
   onOpen?: (account: FamilyAccount) => void
   onPinCash?: (account: FamilyAccount) => void
   pinDisabled?: boolean
+}
+
+function isAccountHealthy(account: FamilyAccount, ledgerDelta: number | undefined): boolean {
+  if (!account.balanceDate || account.openingBalance == null) return false
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  const date = new Date(account.balanceDate)
+  const diffDays = (today.getTime() - date.getTime()) / (24 * 60 * 60 * 1000)
+  if (diffDays < 0 || diffDays > 30) return false
+  const diff = Math.round((account.balance - account.openingBalance - (ledgerDelta ?? 0)) * 100) / 100
+  return Math.abs(diff) < 0.005
 }
 
 const groupToneMap: Record<AccountGroup, string> = {
@@ -86,8 +98,9 @@ function AutoFitAccountName({ name }: { name: string }) {
   )
 }
 
-export function AccountCard({ account, onOpen, onPinCash, pinDisabled = false }: Props) {
+export function AccountCard({ account, ledgerDelta, onOpen, onPinCash, pinDisabled = false }: Props) {
   const displayBalance = getDisplayAccountBalance(account)
+  const healthy = isAccountHealthy(account, ledgerDelta)
   const balanceStr = displayBalance.toLocaleString('zh-TW', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
@@ -147,7 +160,18 @@ export function AccountCard({ account, onOpen, onPinCash, pinDisabled = false }:
             <span className={`block truncate text-[0.95rem] font-black ${isNegative ? 'text-[#c9563f]' : 'text-slate-700'}`}>
               {balanceStr}
             </span>
-            <span className="block text-[0.68rem] font-bold text-slate-400">{account.currency}</span>
+            <span className="flex items-center justify-end gap-1">
+              <span className="text-[0.68rem] font-bold text-slate-400">{account.currency}</span>
+              {healthy ? (
+                <span
+                  className="flex size-[1.05rem] items-center justify-center rounded-full bg-[#d6f5e8] text-[0.62rem] font-black text-[#15957d]"
+                  title="對帳差額為零且確認日期在 30 天內"
+                  aria-label="帳戶健康"
+                >
+                  ✓
+                </span>
+              ) : null}
+            </span>
           </span>
           <span className="text-xl leading-none text-slate-300">›</span>
         </span>
