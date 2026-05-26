@@ -2767,6 +2767,7 @@ export function TransactionForm({
 
   async function handleSubmit(formData: FormData) {
     if (!canSubmit) return
+    if (kind !== 'reminder' && amountValue <= 0) return
 
     const submitMode = !isEditMode && formData.get('submitMode') === 'stay' ? 'stay' : 'ledger'
     const transferTargetAmount =
