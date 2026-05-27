@@ -87,6 +87,7 @@ export function shiftLedgerDate(view: LedgerView, anchorDate: Date, delta: numbe
   }
 
   if (view === 'month') {
+    next.setDate(1)
     next.setMonth(next.getMonth() + delta)
     return next
   }
