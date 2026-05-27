@@ -263,14 +263,6 @@ function formatAmountDisplay(amount: string) {
   return `${formattedInteger}.${rawDecimal.padEnd(2, '0').slice(0, 2)}`
 }
 
-function formatMoney(value: number, currency: string) {
-  const amount = Math.abs(value).toLocaleString('zh-TW', {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })
-  return currency === 'TWD' ? `NT$${amount}` : `${amount} ${currency}`
-}
-
 function parseAmount(amount: string) {
   return evaluateAmount(amount)
 }
@@ -653,109 +645,6 @@ function TextFieldRow({
   )
 }
 
-function TransferAccountCell({
-  label,
-  value,
-  selectedValue,
-  onChange,
-  options,
-}: {
-  label: string
-  value: string
-  selectedValue: string
-  onChange: (value: string) => void
-  options: Array<SelectOption | SelectOptionGroup>
-}) {
-  return (
-    <label className="relative flex min-h-[5.35rem] min-w-0 items-start rounded-[1.35rem] border border-[#ece4d8] bg-[#fcfbf8] px-4 py-3 pr-10">
-      <div className="min-w-0">
-        <div className="text-[0.68rem] font-black tracking-[0.16em] text-slate-400">{label}</div>
-        <div
-          className={`mt-1 text-[0.88rem] font-black leading-tight ${selectedValue ? 'text-slate-950' : 'text-slate-400'}`}
-          style={{ wordBreak: 'break-word' }}
-        >
-          {value}
-        </div>
-      </div>
-      <span className="pointer-events-none absolute right-3 text-lg text-slate-300">›</span>
-      <select
-        value={selectedValue}
-        onChange={(event) => onChange(event.target.value)}
-        className="absolute inset-0 cursor-pointer opacity-0"
-        aria-label={label}
-      >
-        {options.map((option) =>
-          'options' in option ? (
-            <optgroup key={option.label} label={option.label}>
-              {option.options.map((groupedOption) => (
-                <option key={groupedOption.value || '__empty'} value={groupedOption.value}>
-                  {groupedOption.label}
-                </option>
-              ))}
-            </optgroup>
-          ) : (
-            <option key={option.value || '__empty'} value={option.value}>
-              {option.label}
-            </option>
-          ),
-        )}
-      </select>
-    </label>
-  )
-}
-
-function TransferAccountPairRow({
-  sourceValue,
-  sourceSelectedValue,
-  sourceOptions,
-  onSourceChange,
-  targetValue,
-  targetSelectedValue,
-  targetOptions,
-  onTargetChange,
-  onSwap,
-}: {
-  sourceValue: string
-  sourceSelectedValue: string
-  sourceOptions: Array<SelectOption | SelectOptionGroup>
-  onSourceChange: (value: string) => void
-  targetValue: string
-  targetSelectedValue: string
-  targetOptions: Array<SelectOption | SelectOptionGroup>
-  onTargetChange: (value: string) => void
-  onSwap: () => void
-}) {
-  return (
-    <div className="rounded-[1.6rem] border border-[#f0e8dc] bg-white p-3 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
-      <div className="grid grid-cols-[minmax(0,1fr)_3rem_minmax(0,1fr)] items-stretch gap-2">
-        <TransferAccountCell
-          label="轉出"
-          value={sourceValue}
-          selectedValue={sourceSelectedValue}
-          onChange={onSourceChange}
-          options={sourceOptions}
-        />
-        <button
-          type="button"
-          onClick={onSwap}
-          className="flex min-h-[5.35rem] items-center justify-center rounded-[1.15rem] border border-[#ece4d8] bg-[#fcfbf8] text-[1.45rem] font-black text-[#d18c11] transition hover:border-[#d8c7b0] hover:bg-[#fff8e7] hover:text-[#9b6b06]"
-          aria-label="交換轉出與轉入帳戶"
-          title="交換左右帳戶"
-        >
-          ⇄
-        </button>
-        <TransferAccountCell
-          label="轉入"
-          value={targetValue}
-          selectedValue={targetSelectedValue}
-          onChange={onTargetChange}
-          options={targetOptions}
-        />
-      </div>
-    </div>
-  )
-}
-
 function TransferAccountRow({
   label,
   value,
@@ -902,58 +791,6 @@ function TransferAmountPairRow({
   )
 }
 
-function TransferAmountSingleRow({
-  amount,
-  currency,
-  onOpen,
-}: {
-  amount: string
-  currency: string
-  onOpen: () => void
-}) {
-  return (
-    <div className="rounded-[1.6rem] border border-[#ece4d8] bg-[#fcfbf8] p-3 shadow-[0_12px_28px_rgba(15,23,42,0.05)]">
-      <button
-        type="button"
-        onClick={onOpen}
-        className="flex min-h-[7.1rem] w-full flex-col justify-between rounded-[1.2rem] border border-[#f0c44f] bg-[#fff8cf] px-4 py-3 text-left shadow-[0_10px_22px_rgba(242,178,50,0.14)]"
-        aria-label={`編輯轉帳金額，${currency}`}
-      >
-        <div className="text-[0.64rem] font-black tracking-[0.16em] text-[#b58a2a]">金額</div>
-        <div className="mt-1 text-[2rem] font-black leading-none tracking-[-0.06em] text-[#d28a10] sm:text-[2.25rem]">
-          {formatAmountDisplay(amount)}
-        </div>
-      </button>
-    </div>
-  )
-}
-
-function TransferDateRow({
-  value,
-  onChange,
-}: {
-  value: string
-  onChange: (value: string) => void
-}) {
-  return (
-    <label className="relative flex min-h-[4.25rem] items-center justify-between gap-4 rounded-[1.35rem] border border-[#f0e8dc] bg-[#fcfbf8] px-4">
-      <div className="flex items-center gap-3">
-        <span className="text-[0.68rem] font-black tracking-[0.16em] text-slate-400">時間</span>
-      </div>
-      <span className={`truncate text-right text-[1rem] font-black ${value ? 'text-slate-950' : 'text-slate-400'}`}>
-        {formatOccurredAtLabel(value)}
-      </span>
-      <input
-        type="datetime-local"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="absolute inset-0 cursor-pointer opacity-0"
-        aria-label="交易時間"
-      />
-    </label>
-  )
-}
-
 function ReminderDueDateRow({
   value,
   onChange,
@@ -977,28 +814,6 @@ function ReminderDueDateRow({
         aria-label="下次提醒日期"
       />
     </label>
-  )
-}
-
-function TransferNoteRow({
-  value,
-  onChange,
-}: {
-  value: string
-  onChange: (value: string) => void
-}) {
-  return (
-    <div className="flex min-h-[4.25rem] items-center gap-3 rounded-[1.35rem] border border-[#f0e8dc] bg-[#fcfbf8] px-4">
-      <span className="text-[0.68rem] font-black tracking-[0.16em] text-slate-400">備註</span>
-      <input
-        type="text"
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder="..."
-        className="min-w-0 flex-1 bg-transparent text-right text-[1rem] font-black text-slate-950 outline-none placeholder:font-bold placeholder:text-slate-300"
-        aria-label="備註"
-      />
-    </div>
   )
 }
 
