@@ -54,6 +54,8 @@ const REMINDER_FREQUENCY_LABELS: Record<(typeof REMINDER_FREQUENCIES)[number], s
   quarterly: '每三個月',
   yearly: '每年',
 }
+const REMINDER_CATEGORIES = ['車子', '房屋', '帳單', '家事', '其他'] as const
+type ReminderCategory = (typeof REMINDER_CATEGORIES)[number]
 const KEYPAD_KEYS = [
   '7', '8', '9', 'backspace',
   '4', '5', '6', '-',
@@ -97,6 +99,7 @@ type Props = {
   mode?: 'create' | 'edit'
   transaction?: FamilyTransaction | null
   returnUrl?: string
+  initialKind?: Kind
 }
 
 function currentLocalDateTimeValue() {
@@ -177,30 +180,6 @@ function buildAccountOptions(
     .filter((group): group is SelectOptionGroup => Boolean(group))
 }
 
-function buildReminderAccountOptions(
-  accounts: Pick<FamilyAccount, 'id' | 'name' | 'currency' | 'type'>[],
-) {
-  const grouped = new Map<string, SelectOption[]>()
-  const groupOrder = ['房屋帳戶', '汽車帳戶']
-
-  for (const account of accounts) {
-    const label = account.type === '車輛' ? '汽車帳戶' : '房屋帳戶'
-    const options = grouped.get(label) ?? []
-    options.push({
-      value: account.id,
-      label: formatAccountLabel(account),
-    })
-    grouped.set(label, options)
-  }
-
-  return groupOrder
-    .map((label) => {
-      const options = grouped.get(label)
-      if (!options?.length) return null
-      return { label, options }
-    })
-    .filter((group): group is SelectOptionGroup => Boolean(group))
-}
 
 function amountAccentClass(kind: Kind) {
   if (kind === 'reminder') return 'text-[#4f8d7c]'
@@ -2392,9 +2371,10 @@ export function TransactionForm({
   mode = 'create',
   transaction = null,
   returnUrl,
+  initialKind: initialKindProp,
 }: Props) {
   const isEditMode = mode === 'edit' && transaction != null
-  const initialKind = (isEditMode ? transaction.kind : 'expense') as Kind
+  const initialKind = (isEditMode ? transaction.kind : (initialKindProp ?? 'expense')) as Kind
   const initialCategorySelection =
     initialKind === 'reminder'
       ? { parentId: '', categoryId: '' }
@@ -2446,6 +2426,7 @@ export function TransactionForm({
   const [merchant, setMerchant] = useState(isEditMode ? transaction.merchant ?? '' : '')
   const [occurredAt, setOccurredAt] = useState(isEditMode ? toLocalDateTimeValue(transaction.occurred_at ?? transaction.created_at) : currentLocalDateTimeValue)
   const [reminderTitle, setReminderTitle] = useState(isEditMode ? transaction.title ?? '' : '')
+  const [reminderCategory, setReminderCategory] = useState<ReminderCategory>('其他')
   const [reminderFrequency, setReminderFrequency] = useState<ReminderFrequency>('quarterly')
   const [reminderDueOn, setReminderDueOn] = useState(currentLocalDateValue)
   const [owner, setOwner] = useState<Owner>(
@@ -2493,14 +2474,7 @@ export function TransactionForm({
     () => buildAccountOptions(accounts),
     [accounts],
   )
-  const reminderAccounts = useMemo(
-    () => accounts.filter((account) => account.type === '房地產' || account.type === '車輛'),
-    [accounts],
-  )
-  const reminderAccountOptions = useMemo(
-    () => buildReminderAccountOptions(reminderAccounts),
-    [reminderAccounts],
-  )
+  const reminderAccountOptions = accountOptions
   const kindDragStateRef = useRef<{
     active: boolean
     pointerId: number | null
@@ -2518,7 +2492,7 @@ export function TransactionForm({
   const selectedCategory = categoryById.get(resolvedCategoryId) ?? null
   const selectedAccount = accountById.get(resolvedAccountId) ?? null
   const selectedToAccount = accountById.get(resolvedToAccountId) ?? null
-  const resolvedReminderAccountId = reminderAccounts.some((account) => account.id === accountId) ? accountId : ''
+  const resolvedReminderAccountId = accountById.has(accountId) ? accountId : ''
   const selectedReminderAccount = accountById.get(resolvedReminderAccountId) ?? null
   const amountValue = parseAmount(amount)
   const transferSourceCurrency = (selectedAccount?.currency || currency || 'TWD').toUpperCase()
@@ -2539,7 +2513,7 @@ export function TransactionForm({
         : null
   const canSubmit =
     kind === 'reminder'
-      ? Boolean(reminderTitle.trim()) && Boolean(resolvedReminderAccountId) && Boolean(reminderDueOn)
+      ? Boolean(reminderTitle.trim()) && Boolean(reminderDueOn)
       : kind === 'transfer'
         ? Boolean(resolvedAccountId)
           && Boolean(resolvedToAccountId)
@@ -2600,6 +2574,7 @@ export function TransactionForm({
             (() => {
               const reminderData = new FormData()
               reminderData.set('name', reminderTitle.trim())
+              reminderData.set('category', reminderCategory)
               reminderData.set('account_id', resolvedReminderAccountId)
               reminderData.set('frequency', reminderFrequency)
               reminderData.set('due_on', reminderDueOn)
@@ -3080,16 +3055,11 @@ export function TransactionForm({
               <div className="min-w-0">
                 <p className="text-[0.68rem] font-black tracking-[0.18em] text-[#5b8c79]">提辦</p>
                 <h2 className="mt-2 text-[1.85rem] font-black leading-tight text-slate-950">
-                  把會重複發生的保養先排好
+                  把重要的事先排進行事曆
                 </h2>
                 <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
-                  像冷氣濾網、RO 濾心、地產稅、車輛保養或 HOA，都可以先記成提醒。
+                  帳單繳費、定期保養、家事待辦都可以記在這裡。
                 </p>
-              </div>
-
-              <div className="shrink-0 rounded-full border border-[#d6e8df] bg-white px-3 py-2 text-right shadow-[0_10px_24px_rgba(79,141,124,0.12)]">
-                <div className="text-[0.65rem] font-black tracking-[0.18em] text-[#7b9e91]">提醒事項</div>
-                <div className="mt-0.5 text-sm font-black text-slate-950">房屋 / 汽車</div>
               </div>
             </div>
 
@@ -3097,6 +3067,26 @@ export function TransactionForm({
           </section>
 
           <section className="mt-4 overflow-hidden rounded-[2rem] bg-white shadow-[0_20px_50px_rgba(15,23,42,0.08)]">
+            <div className="flex min-h-[4.75rem] items-center justify-between gap-4 px-5">
+              <FieldLabel tone="bg-[#4f8d7c]" label="類別" />
+              <div className="flex flex-wrap justify-end gap-1.5">
+                {REMINDER_CATEGORIES.map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setReminderCategory(cat)}
+                    className={`rounded-full px-3 py-1.5 text-xs font-black transition ${
+                      reminderCategory === cat
+                        ? 'bg-[#4f8d7c] text-white'
+                        : 'bg-[#f0f7f4] text-[#4f8d7c]'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="mx-5 h-px bg-[#edf2ed]" />
             <TextFieldRow
               tone="bg-[#4f8d7c]"
               label="事項名稱"
@@ -3107,12 +3097,12 @@ export function TransactionForm({
             <div className="mx-5 h-px bg-[#edf2ed]" />
             <SelectFieldRow
               tone="bg-[#6b9d89]"
-              label={accountFieldLabel(pageKind)}
-              value={selectedReminderAccount ? formatAccountLabel(selectedReminderAccount) : accountFieldPlaceholder(pageKind)}
+              label="關聯帳戶"
+              value={selectedReminderAccount ? formatAccountLabel(selectedReminderAccount) : '選擇帳戶（選填）'}
               selectedValue={resolvedReminderAccountId}
               onChange={setAccountId}
               options={[
-                { value: '', label: accountFieldPlaceholder(pageKind) },
+                { value: '', label: '不連結帳戶' },
                 ...reminderAccountOptions,
               ]}
             />

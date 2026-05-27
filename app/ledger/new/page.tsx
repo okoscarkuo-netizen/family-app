@@ -28,7 +28,14 @@ async function getActiveAccounts(): Promise<
   >[]
 }
 
-export default async function NewTransactionPage() {
+export default async function NewTransactionPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ kind?: string }>
+}) {
+  const params = await searchParams
+  const initialKind = params.kind === 'reminder' ? 'reminder' : undefined
+
   const [accounts, categories, merchants, merchantGroups, latestPreset, rateTable] = await Promise.all([
     getActiveAccounts(),
     getAllCategories(),
@@ -49,6 +56,7 @@ export default async function NewTransactionPage() {
             merchantGroups={merchantGroups}
             initialPreset={latestPreset}
             rateTable={rateTable}
+            initialKind={initialKind}
           />
         </section>
       </main>
