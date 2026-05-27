@@ -3,6 +3,8 @@ import { createAdminClient } from '@/lib/supabase/admin'
 const CBC_DAILY_RATES_URL =
   'https://www.cbc.gov.tw/public/data/OpenData/%E7%B6%93%E7%A0%94%E8%99%95/BP01D01.csv'
 
+const OPEN_ER_API_URL = 'https://open.er-api.com/v6/latest/USD'
+
 const RATE_REVALIDATE_SECONDS = 60 * 60
 const MAX_STALENESS_DAYS = 4
 const RATE_SNAPSHOT_TABLE = 'exchange_rate_snapshots'
@@ -254,8 +256,43 @@ async function storeRateTable(table: TwdRateTable) {
   if (error) throw error
 }
 
+async function fetchLiveRateSnapshot(): Promise<TwdRateSnapshot | null> {
+  try {
+    const response = await fetch(OPEN_ER_API_URL, {
+      next: { revalidate: RATE_REVALIDATE_SECONDS },
+    })
+    if (!response.ok) return null
+
+    const data = await response.json() as { result?: string; rates?: Record<string, number> }
+    if (data.result !== 'success' || !data.rates) return null
+
+    const twdPerUsd = data.rates['TWD']
+    const jpyPerUsd = data.rates['JPY']
+    if (!twdPerUsd) return null
+
+    const today = new Date().toISOString().slice(0, 10)
+    const rates: Record<string, number> = { TWD: 1, USD: twdPerUsd }
+    if (jpyPerUsd) rates.JPY = twdPerUsd / jpyPerUsd
+
+    return { date: today, sourceDate: today, source: 'cbc', rates }
+  } catch {
+    return null
+  }
+}
+
 async function fetchCbcRateTable() {
-  const snapshots = await getCbcDailyRateRows()
+  const [cbcSnapshots, liveSnapshot] = await Promise.all([
+    getCbcDailyRateRows().catch(() => [] as TwdRateSnapshot[]),
+    fetchLiveRateSnapshot(),
+  ])
+
+  const snapshots = [...cbcSnapshots]
+  if (liveSnapshot) {
+    const idx = snapshots.findIndex((s) => s.date === liveSnapshot.date)
+    if (idx >= 0) snapshots[idx] = liveSnapshot
+    else snapshots.push(liveSnapshot)
+  }
+
   const checkedAt = new Date().toISOString()
   return buildRateTableFromSnapshots(snapshots, checkedAt)
 }
