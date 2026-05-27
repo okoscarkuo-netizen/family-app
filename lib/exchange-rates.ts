@@ -258,9 +258,7 @@ async function storeRateTable(table: TwdRateTable) {
 
 async function fetchLiveRateSnapshot(): Promise<TwdRateSnapshot | null> {
   try {
-    const response = await fetch(OPEN_ER_API_URL, {
-      next: { revalidate: RATE_REVALIDATE_SECONDS },
-    })
+    const response = await fetch(OPEN_ER_API_URL, { cache: 'no-store' })
     if (!response.ok) return null
 
     const data = await response.json() as { result?: string; rates?: Record<string, number> }
@@ -275,7 +273,8 @@ async function fetchLiveRateSnapshot(): Promise<TwdRateSnapshot | null> {
     if (jpyPerUsd) rates.JPY = twdPerUsd / jpyPerUsd
 
     return { date: today, sourceDate: today, source: 'cbc', rates }
-  } catch {
+  } catch (err) {
+    console.error('[exchange-rates] fetchLiveRateSnapshot failed:', err)
     return null
   }
 }
