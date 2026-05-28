@@ -2376,6 +2376,8 @@ export function TransactionForm({
   const formRef = useRef<HTMLFormElement>(null)
   const kindCarouselRef = useRef<HTMLDivElement>(null)
   const swipeSyncTimeoutRef = useRef<number | null>(null)
+  const programmaticScrollRef = useRef(false)
+  const programmaticScrollTimeoutRef = useRef<number | null>(null)
   const skipNextAmountClickRef = useRef(false)
   const router = useRouter()
   const [kind, setKind] = useState<Kind>(initialKind)
@@ -2522,6 +2524,9 @@ export function TransactionForm({
 
     const targetLeft = card.offsetLeft
     if (Math.abs(container.scrollLeft - targetLeft) < 4) return
+    programmaticScrollRef.current = true
+    if (programmaticScrollTimeoutRef.current != null) window.clearTimeout(programmaticScrollTimeoutRef.current)
+    programmaticScrollTimeoutRef.current = window.setTimeout(() => { programmaticScrollRef.current = false }, 500)
     container.scrollTo({ left: targetLeft, behavior: 'smooth' })
   }, [availableKinds, kind])
 
@@ -2827,6 +2832,8 @@ export function TransactionForm({
   }
 
   function handleKindCarouselScroll() {
+    if (programmaticScrollRef.current) return
+
     if (swipeSyncTimeoutRef.current != null) {
       window.clearTimeout(swipeSyncTimeoutRef.current)
     }
