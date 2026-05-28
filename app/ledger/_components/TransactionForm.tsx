@@ -2359,6 +2359,7 @@ export function TransactionForm({
   merchants,
   merchantGroups,
   initialPreset,
+  rateTable,
   mode = 'create',
   transaction = null,
   returnUrl,
@@ -2378,6 +2379,7 @@ export function TransactionForm({
   const swipeSyncTimeoutRef = useRef<number | null>(null)
   const programmaticScrollRef = useRef(false)
   const programmaticScrollTimeoutRef = useRef<number | null>(null)
+  const transferTargetManualRef = useRef(false)
   const skipNextAmountClickRef = useRef(false)
   const router = useRouter()
   const [kind, setKind] = useState<Kind>(initialKind)
@@ -2537,6 +2539,7 @@ export function TransactionForm({
       }
     }
   }, [])
+
 
   useEffect(() => {
     if (!isCategoryPickerOpen && !isCategoryManagerOpen && !isMerchantPickerOpen && !isMerchantManagerOpen) return
@@ -2721,6 +2724,7 @@ export function TransactionForm({
 
   function handleTransferSourceChange(value: string) {
     setAccountId(value)
+    transferTargetManualRef.current = false
     const nextAccount = accountById.get(value)
     if (nextAccount && isCurrency(nextAccount.currency)) {
       setCurrency(nextAccount.currency as Currency)
@@ -2729,6 +2733,7 @@ export function TransactionForm({
 
   function handleTransferTargetChange(value: string) {
     setToAccountId(value)
+    transferTargetManualRef.current = false
   }
 
   function swapTransferAccounts() {
@@ -2926,9 +2931,19 @@ export function TransactionForm({
       }
 
       if (amountSide === 'target') {
+        transferTargetManualRef.current = true
         setTransferTargetAmount((current) => updateValue(current))
       } else {
-        setAmount((current) => updateValue(current))
+        const newAmount = updateValue(amount)
+        setAmount(newAmount)
+        if (!transferTargetManualRef.current && rateTable) {
+          const srcRate = rateTable.latest.rates[transferSourceCurrency]
+          const dstRate = rateTable.latest.rates[transferDestinationCurrency]
+          if (srcRate && dstRate) {
+            const srcAmt = parseAmount(newAmount)
+            setTransferTargetAmount(srcAmt ? String(Math.round(srcAmt * (srcRate / dstRate) * 100) / 100) : '')
+          }
+        }
       }
       return
     }
