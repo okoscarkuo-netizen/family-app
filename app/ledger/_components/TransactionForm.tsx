@@ -3371,6 +3371,26 @@ export function TransactionForm({
         </div>
       </div>
 
+      {kind !== 'reminder' ? (
+        <button
+          type="button"
+          aria-label={isKeypadVisible ? '收起數字鍵盤' : '展開數字鍵盤'}
+          onClick={() => setIsKeypadVisible((v) => !v)}
+          className="fixed right-0 z-50 flex h-14 w-7 items-center justify-center rounded-l-xl bg-[#c8c8c8] text-white shadow-md transition active:bg-[#aaaaaa]"
+          style={{ bottom: isKeypadVisible ? `calc(${KEYPAD_FOOTER_BOTTOM_OFFSET} + 4rem)` : 'calc(6rem + env(safe-area-inset-bottom))' }}
+        >
+          <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none">
+            <path
+              d={isKeypadVisible ? 'm15 6-6 6 6 6' : 'm9 6 6 6-6 6'}
+              stroke="currentColor"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2.5"
+            />
+          </svg>
+        </button>
+      ) : null}
+
       {showKeypad ? (
         <>
           <button
