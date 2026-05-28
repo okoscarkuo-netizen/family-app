@@ -2522,7 +2522,7 @@ export function TransactionForm({
     const card = container.children.item(index) as HTMLElement | null
     if (!card) return
 
-    const targetLeft = card.offsetLeft
+    const targetLeft = card.getBoundingClientRect().left - container.getBoundingClientRect().left + container.scrollLeft
     if (Math.abs(container.scrollLeft - targetLeft) < 4) return
     programmaticScrollRef.current = true
     if (programmaticScrollTimeoutRef.current != null) window.clearTimeout(programmaticScrollTimeoutRef.current)
