@@ -6,6 +6,7 @@ import type { MouseEvent, PointerEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import { AccountCard } from './AccountCard'
 import { AccountModal } from './AccountModal'
+import { AccountBalanceAdjustModal } from './AccountBalanceAdjustModal'
 import type { FamilyAccount } from '@/lib/finance/types'
 import {
   accountGroupOrder,
@@ -438,9 +439,11 @@ function AccountToolsMenu({
 function FavoriteAccountSection({
   accounts,
   ledgerDeltas,
+  onLongPressBalance,
 }: {
   accounts: FamilyAccount[]
   ledgerDeltas?: Record<string, number>
+  onLongPressBalance?: (account: FamilyAccount) => void
 }) {
   if (accounts.length === 0) return null
 
@@ -462,6 +465,7 @@ function FavoriteAccountSection({
             key={account.id}
             account={account}
             ledgerDelta={ledgerDeltas?.[account.id]}
+            onLongPressBalance={onLongPressBalance ? () => onLongPressBalance(account) : undefined}
           />
         ))}
       </div>
@@ -628,11 +632,13 @@ function AccountGroupSections({
   ledgerDeltas,
   emptyMessage,
   idPrefix,
+  onLongPressBalance,
 }: {
   accounts: FamilyAccount[]
   ledgerDeltas?: Record<string, number>
   emptyMessage: string
   idPrefix: string
+  onLongPressBalance?: (account: FamilyAccount) => void
 }) {
   const groupedAccounts = buildGroupedItems(accounts, idPrefix)
 
@@ -661,6 +667,7 @@ function AccountGroupSections({
                 key={account.id}
                 account={account}
                 ledgerDelta={ledgerDeltas?.[account.id]}
+                onLongPressBalance={onLongPressBalance ? () => onLongPressBalance(account) : undefined}
               />
             ))}
           </div>
@@ -675,6 +682,7 @@ export function AccountList({ accounts, ledgerDeltas }: Props) {
   const ownerSwipeStartRef = useRef<{ pointerId: number; x: number; y: number } | null>(null)
   const suppressOwnerSwipeClickRef = useRef(false)
   const [modalOpen, setModalOpen] = useState(false)
+  const [adjustingAccount, setAdjustingAccount] = useState<{ account: FamilyAccount; ledgerDelta: number } | null>(null)
   const [query, setQuery] = useState('')
   const [activeOwner, setActiveOwner] = useState<Owner>('Oscar')
   const [showHiddenAccounts, setShowHiddenAccounts] = useState(false)
@@ -845,6 +853,9 @@ export function AccountList({ accounts, ledgerDeltas }: Props) {
           <FavoriteAccountSection
             accounts={favoriteAccounts}
             ledgerDeltas={ledgerDeltas}
+            onLongPressBalance={(account) =>
+              setAdjustingAccount({ account, ledgerDelta: ledgerDeltas?.[account.id] ?? 0 })
+            }
           />
 
           {regularAccounts.length > 0 ? (
@@ -853,6 +864,9 @@ export function AccountList({ accounts, ledgerDeltas }: Props) {
               ledgerDeltas={ledgerDeltas}
               emptyMessage=""
               idPrefix="account-group"
+              onLongPressBalance={(account) =>
+                setAdjustingAccount({ account, ledgerDelta: ledgerDeltas?.[account.id] ?? 0 })
+              }
             />
           ) : null}
 
@@ -873,6 +887,14 @@ export function AccountList({ accounts, ledgerDeltas }: Props) {
         <AccountModal
           mode="create"
           onClose={closeModal}
+        />
+      ) : null}
+
+      {adjustingAccount ? (
+        <AccountBalanceAdjustModal
+          account={adjustingAccount.account}
+          ledgerDelta={adjustingAccount.ledgerDelta}
+          onClose={() => setAdjustingAccount(null)}
         />
       ) : null}
 

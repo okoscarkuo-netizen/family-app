@@ -118,7 +118,6 @@ export function AccountLinkedBalanceFields({
               name="balance"
               type="number"
               step="0.01"
-              inputMode="decimal"
               value={balanceValue}
               onChange={(e) => setBalanceValue(e.target.value)}
               placeholder="0.00"
@@ -152,7 +151,6 @@ export function AccountLinkedBalanceFields({
           name="opening_balance"
           type="number"
           step="0.01"
-          inputMode="decimal"
           value={openingValue}
           onChange={(e) => setOpeningValue(e.target.value)}
           className={`mt-1 ${inputClass}`}

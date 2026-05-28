@@ -1,14 +1,18 @@
 'use client'
 
 import Link from 'next/link'
-import { useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import type { PointerEvent } from 'react'
 import type { AccountGroup, FamilyAccount } from '@/lib/finance/types'
 import { getAccountGroup, getDisplayAccountBalance, isSharedAccount, normalizeOwner } from '@/lib/finance/types'
+
+const LONG_PRESS_MS = 3000
 
 type Props = {
   account: FamilyAccount
   ledgerDelta?: number
   onOpen?: (account: FamilyAccount) => void
+  onLongPressBalance?: () => void
 }
 
 function isAccountHealthy(account: FamilyAccount, ledgerDelta: number | undefined): boolean {
@@ -96,7 +100,44 @@ function AutoFitAccountName({ name }: { name: string }) {
   )
 }
 
-export function AccountCard({ account, ledgerDelta, onOpen }: Props) {
+export function AccountCard({ account, ledgerDelta, onOpen, onLongPressBalance }: Props) {
+  const timerRef = useRef<number | null>(null)
+  const longPressedRef = useRef(false)
+  const [isHolding, setIsHolding] = useState(false)
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) clearTimeout(timerRef.current)
+    }
+  }, [])
+
+  function handleBalancePointerDown(e: PointerEvent<HTMLSpanElement>) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    longPressedRef.current = false
+    setIsHolding(true)
+    timerRef.current = window.setTimeout(() => {
+      longPressedRef.current = true
+      setIsHolding(false)
+      onLongPressBalance?.()
+    }, LONG_PRESS_MS)
+  }
+
+  function handleBalancePointerEnd() {
+    if (timerRef.current !== null) {
+      clearTimeout(timerRef.current)
+      timerRef.current = null
+    }
+    setIsHolding(false)
+  }
+
+  function handleBalanceClick(e: React.MouseEvent<HTMLSpanElement>) {
+    if (longPressedRef.current) {
+      e.preventDefault()
+      e.stopPropagation()
+      longPressedRef.current = false
+    }
+  }
+
   const displayBalance = getDisplayAccountBalance(account)
   const healthy = isAccountHealthy(account, ledgerDelta)
   const balanceStr = displayBalance.toLocaleString('zh-TW', {
@@ -152,10 +193,18 @@ export function AccountCard({ account, ledgerDelta, onOpen }: Props) {
           </span>
         </span>
 
-        <span className="flex min-w-[6.8rem] items-center justify-end gap-2 text-right">
+        <span
+          className="flex min-w-[6.8rem] touch-manipulation select-none items-center justify-end gap-2 text-right"
+          onPointerDown={onLongPressBalance ? handleBalancePointerDown : undefined}
+          onPointerUp={onLongPressBalance ? handleBalancePointerEnd : undefined}
+          onPointerCancel={onLongPressBalance ? handleBalancePointerEnd : undefined}
+          onPointerLeave={onLongPressBalance ? handleBalancePointerEnd : undefined}
+          onContextMenu={onLongPressBalance ? (e) => e.preventDefault() : undefined}
+          onClick={onLongPressBalance ? handleBalanceClick : undefined}
+        >
           <span className="min-w-0">
             <span className={`block truncate text-[0.95rem] font-black ${isNegative ? 'text-[#c9563f]' : 'text-slate-700'}`}>
-              {balanceStr}
+              {isHolding ? '按住中…' : balanceStr}
             </span>
             <span className="block text-right text-[0.68rem] font-bold text-slate-400">{account.currency}</span>
           </span>

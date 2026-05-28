@@ -145,9 +145,6 @@ export default async function AccountDetailPage({ params, searchParams }: PagePr
                     初始金額 {fmt(getDisplayAccountBalance({ balance: account.openingBalance, kind: account.kind }))}
                   </p>
                 ) : null}
-                <p className="mt-2 text-[0.68rem] font-bold text-slate-400">
-                  長按 3 秒可直接調整目前金額與初始金額，對帳差額會自動重算
-                </p>
               </div>
             </section>
 
