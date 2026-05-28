@@ -838,10 +838,10 @@ export function Dashboard({
   const openBills = bills.filter((item) => item.status !== "已繳").length;
   const openMaintenance = maintenance.filter((item) => !item.completed).length;
   const assetTotal = accounts
-    .filter((account) => account.kind === "asset" && !account.hidden)
+    .filter((account) => account.kind === "asset")
     .reduce((sum, account) => sum + convertedBalance(account), 0);
   const liabilityTotal = accounts
-    .filter((account) => account.kind === "liability" && !account.hidden)
+    .filter((account) => account.kind === "liability")
     .reduce((sum, account) => sum + convertedBalance(account), 0);
   const netAssets = assetTotal - liabilityTotal;
   const assetTrendDays = useMemo(
