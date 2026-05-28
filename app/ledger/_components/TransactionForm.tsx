@@ -216,11 +216,16 @@ function keypadShortcutActiveClass(kind: Kind) {
 
 function evaluateAmount(amount: string): number {
   if (!amount) return 0
-  const parts = amount.split('+').filter((part) => part !== '' && part !== '.')
+  const tokens = amount.split(/([+-])/).filter((t) => t !== '' && t !== '.')
   let total = 0
-  for (const part of parts) {
-    const n = Number(part)
-    if (Number.isFinite(n)) total += n
+  let op = '+'
+  for (const token of tokens) {
+    if (token === '+' || token === '-') {
+      op = token
+    } else {
+      const n = Number(token)
+      if (Number.isFinite(n)) total = op === '+' ? total + n : total - n
+    }
   }
   return total
 }
@@ -228,7 +233,7 @@ function evaluateAmount(amount: string): number {
 function formatAmountDisplay(amount: string) {
   if (!amount) return '0.00'
 
-  if (amount.includes('+')) {
+  if (/[+-]/.test(amount)) {
     return evaluateAmount(amount).toLocaleString('en-US', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
@@ -248,31 +253,29 @@ function parseAmount(amount: string) {
 }
 
 function appendAmountInput(current: string, value: string) {
-  if (value === '-') {
-    if (!current || current.includes('+')) return current
-    if (current.startsWith('-')) return current.slice(1)
-    return `-${current}`
-  }
-
-  if (value === '+') {
+  if (value === '+' || value === '-') {
     if (!current) return current
-    if (current.endsWith('+')) return current
+    if (current.endsWith('+') || current.endsWith('-')) {
+      if (current.slice(-1) === value) return current.slice(0, -1)
+      return `${current.slice(0, -1)}${value}`
+    }
     if (current.endsWith('.')) return current
-    return `${current}+`
+    return `${current}${value}`
   }
 
   if (value === '.') {
-    const lastOperand = current.split('+').pop() ?? ''
+    const tokens = current.split(/[+-]/)
+    const lastOperand = tokens[tokens.length - 1] ?? ''
     if (lastOperand.includes('.')) return current
-    if (!current || current.endsWith('+')) return `${current}0.`
+    if (!current || current.endsWith('+') || current.endsWith('-')) return `${current}0.`
     return `${current}.`
   }
 
-  const parts = current.split('+')
-  const lastOperand = parts[parts.length - 1] ?? ''
+  const tokens = current.split(/([+-])/)
+  const lastOperand = tokens[tokens.length - 1] ?? ''
   if (lastOperand === '0') {
-    parts[parts.length - 1] = value
-    return parts.join('+')
+    tokens[tokens.length - 1] = value
+    return tokens.join('')
   }
 
   const nextLast = `${lastOperand}${value}`
@@ -280,10 +283,10 @@ function appendAmountInput(current: string, value: string) {
   const normalizedInteger = integer.replace(/^0+(?=\d)/, '') || '0'
   if (decimal.length > 2) return current
 
-  parts[parts.length - 1] = nextLast.includes('.')
+  tokens[tokens.length - 1] = nextLast.includes('.')
     ? `${normalizedInteger}.${decimal}`
     : normalizedInteger
-  return parts.join('+')
+  return tokens.join('')
 }
 
 
