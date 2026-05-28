@@ -2379,7 +2379,7 @@ export function TransactionForm({
   const swipeSyncTimeoutRef = useRef<number | null>(null)
   const programmaticScrollRef = useRef(false)
   const programmaticScrollTimeoutRef = useRef<number | null>(null)
-  const transferTargetManualRef = useRef(false)
+  const transferTargetManualRef = useRef(isEditMode && initialKind === 'transfer')
   const skipNextAmountClickRef = useRef(false)
   const router = useRouter()
   const [kind, setKind] = useState<Kind>(initialKind)
