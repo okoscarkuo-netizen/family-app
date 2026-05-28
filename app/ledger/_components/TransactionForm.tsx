@@ -1392,10 +1392,8 @@ function MerchantPickerSheet({
 
   function handleSelectMerchant(name: string) {
     setDraftValue(name)
-    const nextMerchant = merchants.find((merchant) => merchant.name.trim().toLocaleLowerCase('zh-TW') === name.trim().toLocaleLowerCase('zh-TW'))
-    if (nextMerchant) {
-      setSelectedGroupId(nextMerchant.group_id ?? UNASSIGNED_MERCHANT_GROUP_ID)
-    }
+    // 不要在滾輪滑動時跳左側群組：使用者已經選好群組（例如「最近使用」），
+    // 滑商家不應該把他踢去別的母分類。群組要切換用左欄按鈕。
   }
 
   function handleComplete() {
@@ -1460,15 +1458,7 @@ function MerchantPickerSheet({
               type="text"
               value={draftValue}
               onChange={(event) => {
-                const nextValue = event.target.value
-                setDraftValue(nextValue)
-
-                const nextMerchant = merchants.find((merchant) => (
-                  merchant.name.trim().toLocaleLowerCase('zh-TW') === nextValue.trim().toLocaleLowerCase('zh-TW')
-                ))
-                if (nextMerchant) {
-                  setSelectedGroupId(nextMerchant.group_id ?? UNASSIGNED_MERCHANT_GROUP_ID)
-                }
+                setDraftValue(event.target.value)
               }}
               placeholder="搜尋或輸入商家"
               className="ios-search-input min-w-0 flex-1 bg-transparent text-center font-black text-slate-700 outline-none placeholder:text-slate-400"
