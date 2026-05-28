@@ -3390,19 +3390,19 @@ export function TransactionForm({
           />
 
           <div
-            className="fixed inset-x-0 z-[60] px-4"
+            className="fixed inset-x-0 z-[60]"
             style={{ bottom: KEYPAD_FOOTER_BOTTOM_OFFSET }}
             aria-hidden={!showKeypad}
           >
-            <div className="mx-auto flex w-full max-w-md flex-col gap-2">
-              <div className="flex justify-end pr-1">
+            <div className="mx-auto flex w-full max-w-md flex-col">
+              <div className="flex justify-center bg-[#ececec]">
                 <button
                   type="button"
                   onClick={() => setIsKeypadVisible(false)}
-                  className="flex h-10 w-10 items-center justify-center rounded-full border border-[#efe7db] bg-white/96 text-slate-500 shadow-[0_10px_20px_rgba(15,23,42,0.1)] transition active:scale-[0.97]"
+                  className="px-6 py-1 text-slate-400 transition active:text-slate-700"
                   aria-label="收起數字鍵盤"
                 >
-                  <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none">
+                  <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none">
                     <path
                       d="m6 14 6-6 6 6"
                       stroke="currentColor"
@@ -3413,9 +3413,9 @@ export function TransactionForm({
                   </svg>
                 </button>
               </div>
-              <div className="rounded-t-[1.8rem] border border-[#efe7db] bg-white/96 p-2.5 shadow-[0_-16px_36px_rgba(15,23,42,0.14)] backdrop-blur">
-                <div className="flex items-stretch gap-1.5">
-                  <div className={`grid w-[4.1rem] shrink-0 ${availableKinds.length === 4 ? 'grid-rows-4' : 'grid-rows-3'} gap-1.5`}>
+              <div className="border-t border-[#e0e0e0] bg-[#ececec]">
+                <div className="flex items-stretch">
+                  <div className={`grid w-[2.75rem] shrink-0 ${availableKinds.length === 4 ? 'grid-rows-4' : 'grid-rows-3'}`}>
                     {availableKinds.map((item) => {
                       const isActive = kind === item
                       return (
@@ -3424,19 +3424,21 @@ export function TransactionForm({
                           type="button"
                           onClick={() => updateKind(item)}
                           aria-pressed={isActive}
-                          className={`flex min-h-[2.9rem] items-center justify-center rounded-md border text-[0.95rem] font-black tracking-[0.08em] transition active:scale-[0.98] ${
+                          className={`flex flex-col items-center justify-center text-[0.8rem] font-black leading-[1.15] tracking-tight transition ${
                             isActive
-                              ? `border-transparent ${keypadShortcutActiveClass(item)}`
-                              : 'border-[#ece6dc] bg-[#fcfbf8] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]'
+                              ? `${keypadShortcutActiveClass(item)}`
+                              : 'bg-[#ececec] text-slate-500'
                           }`}
                         >
-                          <span style={{ writingMode: 'vertical-rl' }}>{KIND_LABELS[item]}</span>
+                          {Array.from(KIND_LABELS[item]).map((ch, i) => (
+                            <span key={i}>{ch}</span>
+                          ))}
                         </button>
                       )
                     })}
                   </div>
 
-                  <div className="grid min-w-0 flex-1 grid-cols-4 gap-1.5">
+                  <div className="grid min-w-0 flex-1 grid-cols-4 gap-px bg-[#dcdcdc]">
                     {KEYPAD_KEYS.map((key, index) => {
                       if (key === 'confirm' && index === 15) return null
 
@@ -3448,9 +3450,9 @@ export function TransactionForm({
                             onPointerDown={(event) => handleAmountPointerDown(event, key)}
                             onClick={() => handleAmountClick(key)}
                             disabled={pending}
-                            className="row-span-2 rounded-md bg-[linear-gradient(180deg,#ffbd59_0%,#ff9d2f_100%)] px-2 py-2 text-[0.9rem] font-black text-white shadow-[0_12px_24px_rgba(255,157,47,0.34)] disabled:opacity-50"
+                            className="row-span-2 bg-[#e6963a] px-2 text-[1.05rem] font-black text-white transition active:bg-[#d4852c] disabled:opacity-50"
                           >
-                            確定
+                            <span className="inline-flex flex-col items-center leading-[1.15]"><span>確</span><span>定</span></span>
                           </button>
                         )
                       }
@@ -3458,10 +3460,10 @@ export function TransactionForm({
                       const label = key === 'backspace' ? '⌫' : key === '-' ? '−' : key
                       const buttonClass =
                         key === 'backspace'
-                          ? 'bg-[#f6f2eb] text-slate-700'
+                          ? 'bg-white text-slate-500 text-[1.1rem]'
                           : key === '-' || key === '+'
-                            ? 'bg-[#f0ebe2] text-slate-700'
-                            : 'bg-[#fcfbf8] text-slate-950'
+                            ? 'bg-white text-slate-500 text-[1.4rem] font-light'
+                            : 'bg-white text-slate-900 text-[1.45rem]'
 
                       return (
                         <button
@@ -3469,7 +3471,7 @@ export function TransactionForm({
                           type="button"
                           onPointerDown={(event) => handleAmountPointerDown(event, key)}
                           onClick={() => handleAmountClick(key)}
-                          className={`min-h-[2.9rem] rounded-md text-[1.2rem] font-black shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] transition active:scale-[0.98] ${buttonClass}`}
+                          className={`min-h-[3.4rem] font-semibold transition active:bg-[#f0f0f0] ${buttonClass}`}
                         >
                           {label}
                         </button>
