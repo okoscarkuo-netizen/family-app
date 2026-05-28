@@ -58,10 +58,10 @@ const REMINDER_FREQUENCY_LABELS: Record<(typeof REMINDER_FREQUENCIES)[number], s
 const REMINDER_CATEGORIES = ['車子', '房屋', '帳單', '家事', '其他'] as const
 type ReminderCategory = (typeof REMINDER_CATEGORIES)[number]
 const KEYPAD_KEYS = [
-  '7', '8', '9', 'backspace',
-  '4', '5', '6', '-',
+  '7', '8', '9', '-',
+  '4', '5', '6', '+',
   '1', '2', '3', 'confirm',
-  '.', '0', '+', 'confirm',
+  '.', '0', 'clear', 'confirm',
 ] as const
 const FORM_PADDING_WITH_KEYPAD = 'pb-[calc(26rem+env(safe-area-inset-bottom))]'
 const FORM_PADDING_WITHOUT_KEYPAD = 'pb-[calc(10rem+env(safe-area-inset-bottom))]'
@@ -286,15 +286,6 @@ function appendAmountInput(current: string, value: string) {
   return parts.join('+')
 }
 
-function removeAmountCharacter(current: string) {
-  if (!current) return ''
-  const trimmed = current.slice(0, -1)
-  if (trimmed === '-') return ''
-  if (trimmed === '0') return ''
-  if (trimmed.endsWith('.')) return trimmed
-  if (trimmed.includes('+')) return trimmed
-  return trimmed.replace(/^0+(?=\d)/, '') || trimmed
-}
 
 function formatOccurredAtLabel(value: string) {
   const parsed = new Date(value)
@@ -2920,7 +2911,7 @@ export function TransactionForm({
     if (kind === 'transfer') {
       const amountSide = transferIsCrossCurrency ? activeTransferAmountSide : 'source'
       const updateValue = (current: string) => {
-        if (key === 'backspace') return removeAmountCharacter(current)
+        if (key === 'clear') return ''
         return appendAmountInput(current, key)
       }
 
@@ -2932,8 +2923,8 @@ export function TransactionForm({
       return
     }
 
-    if (key === 'backspace') {
-      setAmount((current) => removeAmountCharacter(current))
+    if (key === 'clear') {
+      setAmount('')
       return
     }
 
@@ -3404,7 +3395,7 @@ export function TransactionForm({
                 >
                   <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none">
                     <path
-                      d="m6 14 6-6 6 6"
+                      d="m6 10 6 6 6-6"
                       stroke="currentColor"
                       strokeLinecap="round"
                       strokeLinejoin="round"
@@ -3457,9 +3448,9 @@ export function TransactionForm({
                         )
                       }
 
-                      const label = key === 'backspace' ? '⌫' : key === '-' ? '−' : key
+                      const label = key === 'clear' ? 'C' : key === '-' ? '−' : key
                       const buttonClass =
-                        key === 'backspace'
+                        key === 'clear'
                           ? 'bg-white text-slate-500 text-[1.1rem]'
                           : key === '-' || key === '+'
                             ? 'bg-white text-slate-500 text-[1.4rem] font-light'
