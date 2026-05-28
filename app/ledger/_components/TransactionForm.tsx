@@ -3409,24 +3409,6 @@ export function TransactionForm({
             aria-hidden={!showKeypad}
           >
             <div className="mx-auto flex w-full max-w-md flex-col">
-              <div className="flex justify-center bg-[#ececec]">
-                <button
-                  type="button"
-                  onClick={() => setIsKeypadVisible(false)}
-                  className="px-6 py-1 text-slate-400 transition active:text-slate-700"
-                  aria-label="收起數字鍵盤"
-                >
-                  <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none">
-                    <path
-                      d="m6 10 6 6 6-6"
-                      stroke="currentColor"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth="2"
-                    />
-                  </svg>
-                </button>
-              </div>
               <div className="border-t border-[#e0e0e0] bg-[#ececec]">
                 <div className="flex items-stretch">
                   <div className={`grid w-[2.75rem] shrink-0 ${availableKinds.length === 4 ? 'grid-rows-4' : 'grid-rows-3'}`}>
