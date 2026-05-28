@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
 import type { FamilyCategory, TransactionKind } from '@/lib/family-transactions'
+import { getDefaultCategoryIcon, normalizeCategoryIcon } from '@/lib/category-icons'
 
 export type CategoryMutationResult =
   | { ok: true; category: FamilyCategory }
@@ -85,11 +86,62 @@ export async function createCategory(input: {
     .insert({
       name,
       kind: input.kind,
+      icon: getDefaultCategoryIcon(`${input.kind}:${parentId ?? 'root'}:${name}`),
       parent_id: parentId,
       sort_order: Number(lastSibling?.sort_order ?? 0) + 1,
       source_app: 'family-app',
       is_archived: false,
     })
+    .select('id, name, kind, icon, color, parent_id, sort_order, is_archived')
+    .single()
+
+  if (error) return fail(normalizeCategoryError(error.message))
+
+  revalidateCategoryConsumers()
+  return { ok: true, category: data as FamilyCategory }
+}
+
+export async function updateCategoryIcon(input: {
+  id: string
+  icon: string
+}): Promise<CategoryMutationResult> {
+  const supabase = createAdminClient()
+  if (!supabase) return fail('資料庫連線目前不可用，請稍後再試。')
+
+  const icon = normalizeCategoryIcon(input.icon)
+
+  const { data, error } = await supabase
+    .from('family_categories')
+    .update({ icon: icon || null })
+    .eq('id', input.id)
+    .eq('is_archived', false)
+    .select('id, name, kind, icon, color, parent_id, sort_order, is_archived')
+    .single()
+
+  if (error) return fail(normalizeCategoryError(error.message))
+
+  revalidateCategoryConsumers()
+  return { ok: true, category: data as FamilyCategory }
+}
+
+export async function updateCategory(input: {
+  id: string
+  name: string
+  icon: string
+}): Promise<CategoryMutationResult> {
+  const supabase = createAdminClient()
+  if (!supabase) return fail('資料庫連線目前不可用，請稍後再試。')
+
+  const name = normalizeCategoryName(input.name)
+  if (!name) return fail('分類名稱不能空白。')
+
+  const icon = normalizeCategoryIcon(input.icon)
+
+  const { data, error } = await supabase
+    .from('family_categories')
+    .update({ name, icon: icon || null })
+    .eq('id', input.id)
+    .eq('is_archived', false)
     .select('id, name, kind, icon, color, parent_id, sort_order, is_archived')
     .single()
 

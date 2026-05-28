@@ -37,7 +37,7 @@ export type FamilyTransaction = {
   occurred_on: string
   note: string | null
   created_at: string
-  category?: Pick<FamilyCategory, 'id' | 'name' | 'kind' | 'parent_id'> | null
+  category?: Pick<FamilyCategory, 'id' | 'name' | 'kind' | 'parent_id' | 'icon'> | null
   categoryPath?: string | null
 }
 

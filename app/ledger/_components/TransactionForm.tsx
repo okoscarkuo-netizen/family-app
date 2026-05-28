@@ -30,6 +30,7 @@ import {
 import {
   type TwdRateTable,
 } from '@/lib/exchange-rates'
+import { getCategoryDisplayIcon } from '@/lib/category-icons'
 import { normalizeOwner } from '@/lib/finance/types'
 import type { FamilyAccount } from '@/lib/finance/types'
 
@@ -62,12 +63,12 @@ const KEYPAD_KEYS = [
   '1', '2', '3', 'confirm',
   '.', '0', '+', 'confirm',
 ] as const
-const FORM_PADDING_WITH_KEYPAD = 'pb-[calc(32rem+env(safe-area-inset-bottom))]'
-const FORM_PADDING_WITHOUT_KEYPAD = 'pb-[calc(12rem+env(safe-area-inset-bottom))]'
-const WHEEL_ITEM_HEIGHT = 52
+const FORM_PADDING_WITH_KEYPAD = 'pb-[calc(26rem+env(safe-area-inset-bottom))]'
+const FORM_PADDING_WITHOUT_KEYPAD = 'pb-[calc(10rem+env(safe-area-inset-bottom))]'
+const WHEEL_ITEM_HEIGHT = 44
 const WHEEL_VISIBLE_ROWS = 5
-const KEYPAD_FOOTER_BOTTOM_OFFSET = 'calc(8rem + 2 * env(safe-area-inset-bottom))'
-const ACTION_FOOTER_BOTTOM_OFFSET = 'calc(6.75rem + env(safe-area-inset-bottom))'
+const KEYPAD_FOOTER_BOTTOM_OFFSET = 'calc(6.5rem + 2 * env(safe-area-inset-bottom))'
+const ACTION_FOOTER_BOTTOM_OFFSET = 'calc(5.75rem + env(safe-area-inset-bottom))'
 
 type Currency = (typeof CURRENCIES)[number]
 type Owner = (typeof OWNERS)[number]
@@ -190,7 +191,7 @@ function amountAccentClass(kind: Kind) {
 
 function amountDisplayClass(kind: Kind) {
   if (kind === 'reminder') {
-    return 'text-[2.85rem] leading-none tracking-[-0.06em] sm:text-[3.25rem]'
+    return 'text-[2.25rem] leading-none tracking-[-0.06em] sm:text-[2.6rem]'
   }
   if (kind === 'transfer') {
     return 'text-[3.55rem] leading-none tracking-[-0.06em] sm:text-[4rem]'
@@ -368,10 +369,13 @@ function resolveCategorySelection(
 function buildChildOptions(group: CategoryPickerGroup | null): PickerOption[] {
   if (!group) return []
   if (group.children.length === 0) {
-    return [{ id: group.parent.id, label: group.parent.name }]
+    return [{ id: group.parent.id, label: `${getCategoryDisplayIcon(group.parent)} ${group.parent.name}` }]
   }
 
-  return group.children.map((child) => ({ id: child.id, label: child.name }))
+  return group.children.map((child) => ({
+    id: child.id,
+    label: `${getCategoryDisplayIcon(child)} ${child.name}`,
+  }))
 }
 
 function PickerWheel({
@@ -505,7 +509,7 @@ function SelectFieldRow({
   options: Array<SelectOption | SelectOptionGroup>
 }) {
   return (
-    <label className="relative flex min-h-[4.75rem] items-center justify-between gap-4 px-5">
+    <label className="relative flex min-h-[3.6rem] items-center justify-between gap-4 px-5">
       <FieldLabel tone={tone} label={label} />
       <div className="flex min-w-0 items-center gap-3">
         <span className={`truncate text-right text-[1.05rem] font-black ${selectedValue ? 'text-slate-950' : 'text-slate-400'}`}>
@@ -547,7 +551,7 @@ function DateFieldRow({
   onChange: (value: string) => void
 }) {
   return (
-    <label className="relative flex min-h-[4.75rem] items-center justify-between gap-4 px-5">
+    <label className="relative flex min-h-[3.6rem] items-center justify-between gap-4 px-5">
       <FieldLabel tone="bg-[#ff8a73]" label="時間" />
       <div className="flex min-w-0 items-center gap-3">
         <span className="truncate text-right text-[1.05rem] font-black text-slate-950">
@@ -574,7 +578,7 @@ function OwnerFieldRow({
   onChange: (owner: Owner) => void
 }) {
   return (
-    <div className="flex min-h-[4.75rem] items-center justify-between gap-4 px-5">
+    <div className="flex min-h-[3.6rem] items-center justify-between gap-4 px-5">
       <FieldLabel tone="bg-[#ff6ea9]" label="成員" />
       <div className="flex items-center gap-2">
         {OWNERS.map((member) => (
@@ -610,7 +614,7 @@ function TextFieldRow({
   onChange: (value: string) => void
 }) {
   return (
-    <div className="flex min-h-[4.75rem] items-center justify-between gap-4 px-5">
+    <div className="flex min-h-[3.6rem] items-center justify-between gap-4 px-5">
       <FieldLabel tone={tone} label={label} />
       <input
         type="text"
@@ -661,7 +665,7 @@ function TransferAccountRow({
   }, [value])
 
   return (
-    <label className="relative flex min-h-[4.75rem] items-center justify-between gap-4 px-5">
+    <label className="relative flex min-h-[3.6rem] items-center justify-between gap-4 px-5">
       <FieldLabel tone="bg-[#f0b542]" label={label} />
       <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
         <span
@@ -730,7 +734,7 @@ function TransferAmountPairRow({
   }
 
   function amountTextClass(isActive: boolean) {
-    return `block truncate text-[1.85rem] font-black leading-none tracking-[-0.06em] sm:text-[2.1rem] ${
+    return `block truncate text-[1.4rem] font-black leading-none tracking-[-0.06em] sm:text-[1.6rem] ${
       isActive ? 'text-[#d28a10]' : 'text-slate-950'
     }`
   }
@@ -778,7 +782,7 @@ function ReminderDueDateRow({
   onChange: (value: string) => void
 }) {
   return (
-    <label className="relative flex min-h-[4.35rem] items-center justify-between gap-4 rounded-[1.35rem] border border-[#d8e7de] bg-[#f7fbf8] px-4">
+    <label className="relative flex min-h-[2.9rem] items-center justify-between gap-4 rounded-[1.35rem] border border-[#d8e7de] bg-[#f7fbf8] px-4">
       <div className="flex items-center gap-3">
         <span className="text-[0.68rem] font-black tracking-[0.16em] text-[#7b9e91]">下次提醒</span>
       </div>
@@ -807,7 +811,7 @@ function CategoryFieldRow({
     <button
       type="button"
       onClick={onOpen}
-      className="flex min-h-[4.35rem] w-full items-center justify-between gap-4 px-5 text-left"
+      className="flex min-h-[2.9rem] w-full items-center justify-between gap-4 px-5 text-left"
     >
       <FieldLabel tone="bg-[#ff78a6]" label="分類" />
       <div className="flex min-w-0 items-center gap-3">
@@ -843,7 +847,10 @@ function CategoryPickerSheet({
 }) {
   const groups = buildCategoryPickerGroups(categories, kind)
   const selectedGroup = groups.find((group) => group.parent.id === selectedParentId) ?? groups[0] ?? null
-  const parentOptions = groups.map((group) => ({ id: group.parent.id, label: group.parent.name }))
+  const parentOptions = groups.map((group) => ({
+    id: group.parent.id,
+    label: `${getCategoryDisplayIcon(group.parent)} ${group.parent.name}`,
+  }))
   const childOptions = selectedGroup ? buildChildOptions(selectedGroup) : []
   const selectedChildLabel =
     childOptions.find((option) => option.id === selectedCategoryId)?.label ?? '請選子分類'
@@ -1095,7 +1102,7 @@ function CategoryManagerSheet({
     return (
       <div
         key={category.id}
-        className={`flex min-h-[4.35rem] items-center gap-3 border-b border-[#f0ece5] bg-white px-4 ${
+        className={`flex min-h-[2.9rem] items-center gap-3 border-b border-[#f0ece5] bg-white px-4 ${
           depth === 'child' ? 'pl-10' : ''
         }`}
       >
@@ -1262,7 +1269,7 @@ function CategoryManagerSheet({
                 {renderCategoryRow(group.parent, 'parent')}
 
                 {addingChildParentId === group.parent.id ? (
-                  <div className="flex min-h-[4.1rem] items-center gap-2 border-b border-[#f0ece5] bg-[#fffdf9] px-4 pl-10">
+                  <div className="flex min-h-[3.2rem] items-center gap-2 border-b border-[#f0ece5] bg-[#fffdf9] px-4 pl-10">
                     <input
                       type="text"
                       value={childNames[group.parent.id] ?? ''}
@@ -1320,7 +1327,7 @@ function MerchantFieldRow({
     <button
       type="button"
       onClick={onOpen}
-      className="flex min-h-[4.75rem] w-full items-center justify-between gap-4 px-5 text-left"
+      className="flex min-h-[3.6rem] w-full items-center justify-between gap-4 px-5 text-left"
     >
       <FieldLabel tone="bg-[#53d8bf]" label="商家" />
       <div className="flex min-w-0 items-center gap-3">
@@ -3050,11 +3057,11 @@ export function TransactionForm({
           className="w-full shrink-0 snap-center"
           aria-label={`${KIND_LABELS[pageKind]} 頁`}
         >
-          <section className="overflow-hidden rounded-[1.75rem] bg-[linear-gradient(180deg,#f4fbf7_0%,#ffffff_76%)] px-4 pb-4 pt-4 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
+          <section className="overflow-hidden rounded-[1.75rem] bg-[linear-gradient(180deg,#f4fbf7_0%,#ffffff_76%)] px-4 pb-3 pt-3 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-[0.68rem] font-black tracking-[0.18em] text-[#5b8c79]">提辦</p>
-                <h2 className="mt-2 text-[1.85rem] font-black leading-tight text-slate-950">
+                <h2 className="mt-1.5 text-[1.4rem] font-black leading-tight text-slate-950">
                   把重要的事先排進行事曆
                 </h2>
                 <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
@@ -3067,7 +3074,7 @@ export function TransactionForm({
           </section>
 
           <section className="mt-4 overflow-hidden rounded-[2rem] bg-white shadow-[0_20px_50px_rgba(15,23,42,0.08)]">
-            <div className="flex min-h-[4.75rem] items-center justify-between gap-4 px-5">
+            <div className="flex min-h-[3.6rem] items-center justify-between gap-4 px-5">
               <FieldLabel tone="bg-[#4f8d7c]" label="類別" />
               <div className="flex flex-wrap justify-end gap-1.5">
                 {REMINDER_CATEGORIES.map((cat) => (
@@ -3144,7 +3151,7 @@ export function TransactionForm({
           className="w-full shrink-0 snap-center"
           aria-label={`${KIND_LABELS[pageKind]} 頁`}
         >
-          <section className="overflow-hidden rounded-[1.75rem] bg-white px-4 pb-4 pt-4 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
+          <section className="overflow-hidden rounded-[1.75rem] bg-white px-4 pb-3 pt-3 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
             {transferIsCrossCurrency ? (
               <div className="mt-4">
                 <TransferAmountPairRow
@@ -3248,7 +3255,7 @@ export function TransactionForm({
         className="w-full shrink-0 snap-center"
         aria-label={`${KIND_LABELS[pageKind]} 頁`}
       >
-        <section className="overflow-hidden rounded-[1.75rem] bg-white px-4 pb-4 pt-4 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
+        <section className="overflow-hidden rounded-[1.75rem] bg-white px-4 pb-3 pt-3 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
           <div className="flex items-start justify-between gap-3">
             <button
               type="button"
@@ -3427,7 +3434,7 @@ export function TransactionForm({
                           type="button"
                           onClick={() => updateKind(item)}
                           aria-pressed={isActive}
-                          className={`flex min-h-[3.4rem] items-center justify-center rounded-[1.15rem] border text-[0.95rem] font-black tracking-[0.08em] transition active:scale-[0.98] ${
+                          className={`flex min-h-[2.9rem] items-center justify-center rounded-[1.15rem] border text-[0.95rem] font-black tracking-[0.08em] transition active:scale-[0.98] ${
                             isActive
                               ? `border-transparent ${keypadShortcutActiveClass(item)}`
                               : 'border-[#ece6dc] bg-[#fcfbf8] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]'
@@ -3451,7 +3458,7 @@ export function TransactionForm({
                             onPointerDown={(event) => handleAmountPointerDown(event, key)}
                             onClick={() => handleAmountClick(key)}
                             disabled={pending}
-                            className="row-span-2 rounded-[1.15rem] bg-[linear-gradient(180deg,#ffbd59_0%,#ff9d2f_100%)] px-2 py-3 text-[1rem] font-black text-white shadow-[0_12px_24px_rgba(255,157,47,0.34)] disabled:opacity-50"
+                            className="row-span-2 rounded-[1.15rem] bg-[linear-gradient(180deg,#ffbd59_0%,#ff9d2f_100%)] px-2 py-2 text-[0.9rem] font-black text-white shadow-[0_12px_24px_rgba(255,157,47,0.34)] disabled:opacity-50"
                           >
                             確定
                           </button>
@@ -3472,7 +3479,7 @@ export function TransactionForm({
                           type="button"
                           onPointerDown={(event) => handleAmountPointerDown(event, key)}
                           onClick={() => handleAmountClick(key)}
-                          className={`min-h-[3.4rem] rounded-[1.15rem] text-[1.4rem] font-black shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] transition active:scale-[0.98] ${buttonClass}`}
+                          className={`min-h-[2.9rem] rounded-[1.15rem] text-[1.2rem] font-black shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] transition active:scale-[0.98] ${buttonClass}`}
                         >
                           {label}
                         </button>

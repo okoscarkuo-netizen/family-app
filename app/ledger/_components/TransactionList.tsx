@@ -3,9 +3,9 @@ import {
   getTransferAmountForAccount,
   getTransferDisplayAmounts,
   type FamilyTransaction,
-  type TransactionKind,
 } from '@/lib/family-transactions'
 import { softSurfaceClass } from '@/components/PageShell'
+import { getCategoryDisplayIcon } from '@/lib/category-icons'
 
 type LedgerAccount = {
   id: string
@@ -14,22 +14,20 @@ type LedgerAccount = {
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六'] as const
 
-const KIND_LABEL: Record<TransactionKind, string> = {
+const KIND_LABEL: Record<FamilyTransaction['kind'], string> = {
   expense: '支出',
   income: '收入',
   transfer: '轉帳',
 }
 
-function amountClass(kind: TransactionKind) {
+function amountClass(kind: FamilyTransaction['kind']) {
   if (kind === 'income') return 'text-[#23b99f]'
   if (kind === 'expense') return 'text-[#df7d77]'
   return 'text-[#8d9298]'
 }
 
-function iconClass(kind: TransactionKind) {
-  if (kind === 'income') return 'border-[#9edfd2] bg-[#f0fdf8] text-[#23b99f]'
-  if (kind === 'expense') return 'border-[#f0b0aa] bg-[#fff7f5] text-[#df7d77]'
-  return 'border-[#efd05e] bg-[#fffaf0] text-[#d0a00e]'
+function iconClass() {
+  return 'border-[#e2e4e8] bg-[#f7f7f5] text-[#5e646d] shadow-[0_1px_0_rgba(15,23,42,0.02)]'
 }
 
 function formatMoney(value: number, currency?: string): string {
@@ -128,15 +126,11 @@ function getMetaLine(tx: FamilyTransaction, accountNames: Map<string, string>) {
   return parts.join(' · ')
 }
 
-function getIconLabel(tx: FamilyTransaction) {
-  if (tx.kind === 'transfer') return '↔'
-  if (tx.kind === 'income') return '收'
-
-  const text = `${tx.title}${tx.categoryPath ?? ''}${tx.note ?? ''}`
-  if (/[餐食菜飲咖啡]/.test(text)) return '食'
-  if (/[車油機汽保養]/.test(text)) return '車'
-  if (/[家房水電瓦斯稅]/.test(text)) return '家'
-  return '支'
+function getTransactionIcon(tx: FamilyTransaction) {
+  if (tx.category) return getCategoryDisplayIcon(tx.category)
+  if (tx.kind === 'transfer') return '轉'
+  if (tx.kind === 'income') return '入'
+  return '出'
 }
 
 function getDaySummary(items: FamilyTransaction[]) {
@@ -192,10 +186,10 @@ export function TransactionList({ transactions, accounts, currentAccountId, retu
                   aria-label={`查看 ${getTransactionTitle(tx, accountNames)}`}
                 >
                   <div
-                    className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-[8px] border text-[0.66rem] font-semibold ${iconClass(tx.kind)}`}
+                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[0.58rem] font-semibold leading-none tracking-[-0.02em] ${iconClass()}`}
                     aria-hidden="true"
                   >
-                    {getIconLabel(tx)}
+                    {getTransactionIcon(tx)}
                   </div>
 
                   <div className="min-w-0 flex-1">

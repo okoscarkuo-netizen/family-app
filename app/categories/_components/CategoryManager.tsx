@@ -4,13 +4,22 @@ import Link from 'next/link'
 import { useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { archiveCategory, createCategory, renameCategory } from '@/app/actions/categories'
+import {
+  archiveCategory,
+  createCategory,
+  updateCategory,
+} from '@/app/actions/categories'
 import {
   buildCategoryPickerGroups,
   type CategoryPickerGroup,
   type FamilyCategory,
   type TransactionKind,
 } from '@/lib/family-transactions'
+import {
+  CATEGORY_ICON_CHOICES,
+  getCategoryDisplayIcon,
+  normalizeCategoryIcon,
+} from '@/lib/category-icons'
 
 type Props = {
   initialCategories: FamilyCategory[]
@@ -48,6 +57,7 @@ export function CategoryManager({ initialCategories }: Props) {
   const [addingChildParentId, setAddingChildParentId] = useState<string | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState('')
+  const [editingIconDraft, setEditingIconDraft] = useState('')
   const [pendingKey, setPendingKey] = useState<string | null>(null)
   const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
 
@@ -121,7 +131,7 @@ export function CategoryManager({ initialCategories }: Props) {
     }
   }
 
-  async function handleRename() {
+  async function handleSaveCategory() {
     if (!editingId) return
 
     const normalizedName = editingName.trim()
@@ -130,11 +140,11 @@ export function CategoryManager({ initialCategories }: Props) {
       return
     }
 
-    setPendingKey(`rename-${editingId}`)
+    setPendingKey(`update-${editingId}`)
     setNotice(null)
 
     try {
-      const result = await renameCategory({ id: editingId, name: normalizedName })
+      const result = await updateCategory({ id: editingId, name: normalizedName, icon: editingIconDraft })
       if (!result.ok) {
         setNotice({ tone: 'error', text: result.error })
         return
@@ -143,6 +153,7 @@ export function CategoryManager({ initialCategories }: Props) {
       upsertCategory(result.category)
       setEditingId(null)
       setEditingName('')
+      setEditingIconDraft('')
       setNotice({ tone: 'success', text: '分類已更新。' })
     } finally {
       setPendingKey(null)
@@ -175,101 +186,153 @@ export function CategoryManager({ initialCategories }: Props) {
   function startEditing(category: FamilyCategory) {
     setEditingId(category.id)
     setEditingName(category.name)
+    setEditingIconDraft(category.icon ?? '')
     setNotice(null)
   }
 
   function renderCategoryRow(category: FamilyCategory, depth: 'parent' | 'child') {
     const isEditing = editingId === category.id
-    const isPending = pendingKey === `rename-${category.id}` || pendingKey === `archive-${category.id}`
+    const isPending =
+      pendingKey === `update-${category.id}` ||
+      pendingKey === `archive-${category.id}`
+    const previewIcon = normalizeCategoryIcon(editingIconDraft) || getCategoryDisplayIcon(category)
 
     return (
       <div
         key={category.id}
-        className={`flex min-h-[4.35rem] items-center gap-3 border-b border-[#f0ece5] bg-white px-4 ${
-          depth === 'child' ? 'pl-10' : ''
-        }`}
+        className={`border-b border-[#f0ece5] bg-white ${depth === 'child' ? 'pl-10' : ''}`}
       >
-        <span
-          className={`h-9 w-9 shrink-0 rounded-[0.85rem] border ${
-            depth === 'parent'
-              ? 'border-[#eadfce] bg-[#fff9ee]'
-              : 'border-[#e6f3ee] bg-[#f2fffa]'
-          }`}
-          aria-hidden="true"
-        />
-
         {isEditing ? (
-          <input
-            type="text"
-            value={editingName}
-            onChange={(event) => setEditingName(event.target.value)}
-            onKeyDown={(event) => handleEnter(event, handleRename)}
-            className="min-w-0 flex-1 rounded-[1rem] border border-[#eadfce] bg-[#fcfbf8] px-3 py-2 text-[1rem] font-black text-slate-950 outline-none"
-            aria-label="分類名稱"
-            autoFocus
-          />
-        ) : (
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-[1rem] font-black text-slate-900">{category.name}</div>
-            <div className="mt-0.5 text-xs font-bold text-slate-400">
-              {depth === 'parent' ? '一級分類' : '二級分類'}
+          <div className="px-4 py-3">
+            <div className="flex items-start gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[0.85rem] border border-[#e3e4e8] bg-[#f7f7f5] text-[0.82rem] font-black tracking-[-0.02em] text-[#5e646d]">
+                {previewIcon}
+              </div>
+
+              <div className="min-w-0 flex-1">
+                <input
+                  type="text"
+                  value={editingName}
+                  onChange={(event) => setEditingName(event.target.value)}
+                  onKeyDown={(event) => handleEnter(event, handleSaveCategory)}
+                  className="min-w-0 w-full rounded-[1rem] border border-[#eadfce] bg-[#fcfbf8] px-3 py-2 text-[1rem] font-black text-slate-950 outline-none"
+                  aria-label="分類名稱"
+                  autoFocus
+                />
+
+                <div className="mt-2 rounded-[1rem] border border-[#ece5d9] bg-[#fbfaf7] p-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-[0.65rem] font-black tracking-[0.16em] text-slate-400">符號</div>
+                    <input
+                      type="text"
+                      value={editingIconDraft}
+                      onChange={(event) => setEditingIconDraft(event.target.value.slice(0, 3))}
+                      className="w-24 rounded-full border border-transparent bg-white/80 px-3 py-1.5 text-right text-sm font-black text-slate-950 outline-none placeholder:text-slate-400"
+                      placeholder="留空"
+                      aria-label="分類符號"
+                    />
+                  </div>
+
+                  <div className="mt-2 max-h-28 overflow-y-auto pr-1">
+                    <div className="grid grid-cols-6 gap-2">
+                      {CATEGORY_ICON_CHOICES.map((choice) => (
+                        <button
+                          key={choice}
+                          type="button"
+                          onClick={() => setEditingIconDraft(choice)}
+                          className={`flex h-9 items-center justify-center rounded-[0.85rem] border text-[0.92rem] font-black transition ${
+                            normalizeCategoryIcon(editingIconDraft) === choice
+                              ? 'border-slate-950 bg-slate-950 text-white'
+                              : 'border-[#e3e4e8] bg-[#f7f7f5] text-[#5e646d]'
+                          }`}
+                        >
+                          {choice}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="mt-2 flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setEditingIconDraft('')}
+                      className="rounded-full bg-[#f4f4f2] px-3 py-1.5 text-xs font-black text-slate-600"
+                    >
+                      恢復預設
+                    </button>
+                    <div className="text-xs font-medium text-[#b0b4b9]">留空會改回預設符號</div>
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
-        )}
 
-        {isEditing ? (
-          <div className="flex shrink-0 items-center gap-1.5">
-            <button
-              type="button"
-              onClick={handleRename}
-              disabled={Boolean(pendingKey)}
-              className="rounded-full bg-slate-950 px-3 py-2 text-xs font-black text-white disabled:opacity-50"
-            >
-              儲存
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setEditingId(null)
-                setEditingName('')
-              }}
-              disabled={Boolean(pendingKey)}
-              className="rounded-full bg-[#f4f1ea] px-3 py-2 text-xs font-black text-slate-500 disabled:opacity-50"
-            >
-              取消
-            </button>
-          </div>
-        ) : (
-          <div className="flex shrink-0 items-center gap-1.5">
-            {depth === 'parent' ? (
+            <div className="mt-3 flex items-center justify-end gap-1.5">
+              <button
+                type="button"
+                onClick={handleSaveCategory}
+                disabled={Boolean(pendingKey)}
+                className="rounded-full bg-slate-950 px-3 py-2 text-xs font-black text-white disabled:opacity-50"
+              >
+                儲存
+              </button>
               <button
                 type="button"
                 onClick={() => {
-                  setAddingChildParentId(category.id)
-                  setNotice(null)
+                  setEditingId(null)
+                  setEditingName('')
+                  setEditingIconDraft('')
                 }}
                 disabled={Boolean(pendingKey)}
-                className="rounded-full bg-[#f2fbf7] px-3 py-2 text-xs font-black text-[#16866d] disabled:opacity-50"
+                className="rounded-full bg-[#f4f1ea] px-3 py-2 text-xs font-black text-slate-500 disabled:opacity-50"
               >
-                二級
+                取消
               </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => startEditing(category)}
-              disabled={Boolean(pendingKey)}
-              className="rounded-full bg-[#f4f1ea] px-3 py-2 text-xs font-black text-slate-600 disabled:opacity-50"
-            >
-              修改
-            </button>
-            <button
-              type="button"
-              onClick={() => handleArchive(category)}
-              disabled={isPending || Boolean(pendingKey)}
-              className="rounded-full bg-[#fff1ee] px-3 py-2 text-xs font-black text-[#c9563f] disabled:opacity-50"
-            >
-              封存
-            </button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex min-h-[4.35rem] items-center gap-3 px-4 py-3">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[0.85rem] border border-[#e3e4e8] bg-[#f7f7f5] text-[0.82rem] font-black tracking-[-0.02em] text-[#5e646d]">
+              {getCategoryDisplayIcon(category)}
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[1rem] font-black text-slate-900">{category.name}</div>
+              <div className="mt-0.5 text-xs font-bold text-slate-400">
+                {depth === 'parent' ? '一級分類' : '二級分類'}
+              </div>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-1.5">
+              {depth === 'parent' ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddingChildParentId(category.id)
+                    setNotice(null)
+                  }}
+                  disabled={Boolean(pendingKey)}
+                  className="rounded-full bg-[#f2fbf7] px-3 py-2 text-xs font-black text-[#16866d] disabled:opacity-50"
+                >
+                  二級
+                </button>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => startEditing(category)}
+                disabled={Boolean(pendingKey)}
+                className="rounded-full bg-[#f4f1ea] px-3 py-2 text-xs font-black text-slate-600 disabled:opacity-50"
+              >
+                修改
+              </button>
+              <button
+                type="button"
+                onClick={() => handleArchive(category)}
+                disabled={isPending || Boolean(pendingKey)}
+                className="rounded-full bg-[#fff1ee] px-3 py-2 text-xs font-black text-[#c9563f] disabled:opacity-50"
+              >
+                封存
+              </button>
+            </div>
           </div>
         )}
       </div>
@@ -421,6 +484,7 @@ export function CategoryManager({ initialCategories }: Props) {
           </div>
         )}
       </div>
+
     </div>
   )
 }
