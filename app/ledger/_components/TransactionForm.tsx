@@ -509,7 +509,7 @@ function SelectFieldRow({
   options: Array<SelectOption | SelectOptionGroup>
 }) {
   return (
-    <label className="relative flex min-h-[3.6rem] items-center justify-between gap-4 px-5">
+    <label className="relative flex min-h-[2.8rem] items-center justify-between gap-4 px-5">
       <FieldLabel tone={tone} label={label} />
       <div className="flex min-w-0 items-center gap-3">
         <span className={`truncate text-right text-[1.05rem] font-black ${selectedValue ? 'text-slate-950' : 'text-slate-400'}`}>
@@ -551,7 +551,7 @@ function DateFieldRow({
   onChange: (value: string) => void
 }) {
   return (
-    <label className="relative flex min-h-[3.6rem] items-center justify-between gap-4 px-5">
+    <label className="relative flex min-h-[2.8rem] items-center justify-between gap-4 px-5">
       <FieldLabel tone="bg-[#ff8a73]" label="時間" />
       <div className="flex min-w-0 items-center gap-3">
         <span className="truncate text-right text-[1.05rem] font-black text-slate-950">
@@ -578,7 +578,7 @@ function OwnerFieldRow({
   onChange: (owner: Owner) => void
 }) {
   return (
-    <div className="flex min-h-[3.6rem] items-center justify-between gap-4 px-5">
+    <div className="flex min-h-[2.8rem] items-center justify-between gap-4 px-5">
       <FieldLabel tone="bg-[#ff6ea9]" label="成員" />
       <div className="flex items-center gap-2">
         {OWNERS.map((member) => (
@@ -614,7 +614,7 @@ function TextFieldRow({
   onChange: (value: string) => void
 }) {
   return (
-    <div className="flex min-h-[3.6rem] items-center justify-between gap-4 px-5">
+    <div className="flex min-h-[2.8rem] items-center justify-between gap-4 px-5">
       <FieldLabel tone={tone} label={label} />
       <input
         type="text"
@@ -665,7 +665,7 @@ function TransferAccountRow({
   }, [value])
 
   return (
-    <label className="relative flex min-h-[3.6rem] items-center justify-between gap-4 px-5">
+    <label className="relative flex min-h-[2.8rem] items-center justify-between gap-4 px-5">
       <FieldLabel tone="bg-[#f0b542]" label={label} />
       <div className="flex min-w-0 flex-1 items-center justify-end gap-2">
         <span
@@ -1327,7 +1327,7 @@ function MerchantFieldRow({
     <button
       type="button"
       onClick={onOpen}
-      className="flex min-h-[3.6rem] w-full items-center justify-between gap-4 px-5 text-left"
+      className="flex min-h-[2.8rem] w-full items-center justify-between gap-4 px-5 text-left"
     >
       <FieldLabel tone="bg-[#53d8bf]" label="商家" />
       <div className="flex min-w-0 items-center gap-3">
@@ -3057,7 +3057,7 @@ export function TransactionForm({
           className="w-full shrink-0 snap-center"
           aria-label={`${KIND_LABELS[pageKind]} 頁`}
         >
-          <section className="overflow-hidden rounded-[1.75rem] bg-[linear-gradient(180deg,#f4fbf7_0%,#ffffff_76%)] px-4 pb-3 pt-3 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
+          <section className="overflow-hidden rounded-[1.75rem] bg-[linear-gradient(180deg,#f4fbf7_0%,#ffffff_76%)] px-4 pb-2 pt-2 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-[0.68rem] font-black tracking-[0.18em] text-[#5b8c79]">提辦</p>
@@ -3073,8 +3073,8 @@ export function TransactionForm({
             <div className={`mt-4 h-1 rounded-full ${amountLineClass(pageKind)}`} />
           </section>
 
-          <section className="mt-4 overflow-hidden rounded-[2rem] bg-white shadow-[0_20px_50px_rgba(15,23,42,0.08)]">
-            <div className="flex min-h-[3.6rem] items-center justify-between gap-4 px-5">
+          <section className="mt-2 overflow-hidden rounded-[2rem] bg-white shadow-[0_20px_50px_rgba(15,23,42,0.08)]">
+            <div className="flex min-h-[2.8rem] items-center justify-between gap-4 px-5">
               <FieldLabel tone="bg-[#4f8d7c]" label="類別" />
               <div className="flex flex-wrap justify-end gap-1.5">
                 {REMINDER_CATEGORIES.map((cat) => (
@@ -3151,7 +3151,7 @@ export function TransactionForm({
           className="w-full shrink-0 snap-center"
           aria-label={`${KIND_LABELS[pageKind]} 頁`}
         >
-          <section className="overflow-hidden rounded-[1.75rem] bg-white px-4 pb-3 pt-3 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
+          <section className="overflow-hidden rounded-[1.75rem] bg-white px-4 pb-2 pt-2 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
             {transferIsCrossCurrency ? (
               <div className="mt-4">
                 <TransferAmountPairRow
@@ -3207,7 +3207,7 @@ export function TransactionForm({
             <div className={`mt-3 h-1 rounded-full ${amountLineClass(pageKind)}`} />
           </section>
 
-          <section className="mt-4 overflow-hidden rounded-[2rem] bg-white shadow-[0_20px_50px_rgba(15,23,42,0.08)]">
+          <section className="mt-2 overflow-hidden rounded-[2rem] bg-white shadow-[0_20px_50px_rgba(15,23,42,0.08)]">
             <TransferAccountRow
               label="轉出"
               value={selectedAccount ? formatAccountLabel(selectedAccount) : '選擇轉出帳戶'}
@@ -3255,7 +3255,7 @@ export function TransactionForm({
         className="w-full shrink-0 snap-center"
         aria-label={`${KIND_LABELS[pageKind]} 頁`}
       >
-        <section className="overflow-hidden rounded-[1.75rem] bg-white px-4 pb-3 pt-3 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
+        <section className="overflow-hidden rounded-[1.75rem] bg-white px-4 pb-2 pt-2 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
           <div className="flex items-start justify-between gap-3">
             <button
               type="button"
@@ -3293,7 +3293,7 @@ export function TransactionForm({
           <div className={`mt-3 h-1 rounded-full ${amountLineClass(pageKind)}`} />
         </section>
 
-        <section className="mt-4 overflow-hidden rounded-[2rem] bg-white shadow-[0_20px_50px_rgba(15,23,42,0.08)]">
+        <section className="mt-2 overflow-hidden rounded-[2rem] bg-white shadow-[0_20px_50px_rgba(15,23,42,0.08)]">
           <CategoryFieldRow
             value={pageSelectedCategory ? categoryPathById.get(pageSelectedCategory.id) ?? pageCategoryPath : pageCategoryPath}
             onOpen={openCategoryPicker}
