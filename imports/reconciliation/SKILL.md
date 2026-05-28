@@ -9,6 +9,8 @@ Paths under `/Users/hankuo/Documents/AI_Workspace/1_Projects/Family_App/imports/
 
 **Hard rules:** never modify `raw/`; derived → `generated/`; no Supabase writes until user approves; deletions never auto.
 
+**Card-payment policy for the two US cards:** Discover 5490 and Bonvoy Brilliant Amex 21006 always settle from `฿US-HSBC_融_薪轉`. When a card-payment row does not match exactly, search the same source account within ±10 days of the statement date. If a nearby App transfer exists but the amount is off, update the amount. If no transfer exists in that window, create the transfer from `฿US-HSBC_融_薪轉` to the card. If both the date and amount are far off, stop and ask the user to review it.
+
 **First-time per file:** if not in `generated/statement-account-map.json`, ask `這份帳單要對應 Family App 裡的哪一個帳戶？`, list active `family_accounts` (`id`,`name`,`type`,`owner`,`kind`,`currency`); on yes, append mapping keyed by `filename+size+mtime`(+optional `sha256`).
 
 **Workflow:**
