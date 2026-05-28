@@ -45,6 +45,7 @@ function parseInput(value: string) {
 
 export function AccountLinkedBalanceFields({
   balance,
+  openingBalance,
   ledgerDelta,
   balanceDate,
   openingLabel = '初始金額',
@@ -61,7 +62,7 @@ export function AccountLinkedBalanceFields({
 
   const [balanceValue, setBalanceValue] = useState(initialBalanceStr)
   const [dateValue, setDateValue] = useState(initialDateStr)
-  const [openingValue, setOpeningValue] = useState(() => inputValue(0))
+  const [openingValue, setOpeningValue] = useState(() => inputValue(openingBalance ?? 0))
 
   const parsedBalance = parseInput(balanceValue)
   const parsedOpeningBalance = parseInput(openingValue)
