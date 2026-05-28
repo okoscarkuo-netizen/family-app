@@ -782,7 +782,7 @@ function ReminderDueDateRow({
   onChange: (value: string) => void
 }) {
   return (
-    <label className="relative flex min-h-[2.9rem] items-center justify-between gap-4 rounded-[1.35rem] border border-[#d8e7de] bg-[#f7fbf8] px-4">
+    <label className="relative flex min-h-[2.9rem] items-center justify-between gap-4 px-5">
       <div className="flex items-center gap-3">
         <span className="text-[0.68rem] font-black tracking-[0.16em] text-[#7b9e91]">下次提醒</span>
       </div>
@@ -1846,7 +1846,7 @@ function MerchantManagerSheet({
     return (
       <div
         key={merchantItem.id}
-        className="rounded-[1.15rem] border border-[#eee6d9] bg-[#fcfbf8] p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]"
+        className="rounded-md border border-[#eee6d9] bg-[#fcfbf8] p-3 shadow-[0_10px_24px_rgba(15,23,42,0.04)]"
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0 flex-1">
@@ -1987,15 +1987,15 @@ function MerchantManagerSheet({
             </div>
 
             <div className="mt-4 grid grid-cols-3 gap-2">
-              <div className="rounded-[1.15rem] border border-[#eee5d8] bg-[#fcfbf8] px-3 py-3">
+              <div className="rounded-md border border-[#eee5d8] bg-[#fcfbf8] px-3 py-3">
                 <div className="text-[0.65rem] font-black tracking-[0.16em] text-slate-400">分類</div>
                 <div className="mt-1 text-lg font-black text-slate-900">{groups.length}</div>
               </div>
-              <div className="rounded-[1.15rem] border border-[#eee5d8] bg-[#fcfbf8] px-3 py-3">
+              <div className="rounded-md border border-[#eee5d8] bg-[#fcfbf8] px-3 py-3">
                 <div className="text-[0.65rem] font-black tracking-[0.16em] text-slate-400">商家</div>
                 <div className="mt-1 text-lg font-black text-slate-900">{merchants.length}</div>
               </div>
-              <div className="rounded-[1.15rem] border border-[#eee5d8] bg-[#fcfbf8] px-3 py-3">
+              <div className="rounded-md border border-[#eee5d8] bg-[#fcfbf8] px-3 py-3">
                 <div className="text-[0.65rem] font-black tracking-[0.16em] text-slate-400">未分類</div>
                 <div className="mt-1 text-lg font-black text-slate-900">{unassignedMerchantCount}</div>
               </div>
@@ -2346,7 +2346,7 @@ function MerchantManagerSheet({
             <button
               type="button"
               onClick={onClose}
-              className="w-full rounded-[1.15rem] bg-slate-950 px-4 py-3 text-sm font-black text-white shadow-[0_14px_28px_rgba(15,23,42,0.16)] transition active:scale-[0.98]"
+              className="w-full rounded-md bg-slate-950 px-4 py-3 text-sm font-black text-white shadow-[0_14px_28px_rgba(15,23,42,0.16)] transition active:scale-[0.98]"
               aria-label="關閉商家設定"
             >
               完成並返回
@@ -2965,7 +2965,7 @@ export function TransactionForm({
             type="button"
             onClick={handleDelete}
             disabled={pending}
-            className="min-h-12 rounded-[1.15rem] border border-[#f0d3cf] bg-[#fff4f2] px-4 text-[0.95rem] font-black text-[#c9563f] transition active:scale-[0.98] disabled:bg-[#f4ebe8] disabled:text-[#d7aaa3]"
+            className="min-h-12 rounded-md border border-[#f0d3cf] bg-[#fff4f2] px-4 text-[0.95rem] font-black text-[#c9563f] transition active:scale-[0.98] disabled:bg-[#f4ebe8] disabled:text-[#d7aaa3]"
           >
             {pending ? '處理中' : '刪除'}
           </button>
@@ -2974,7 +2974,7 @@ export function TransactionForm({
             name="submitMode"
             value="ledger"
             disabled={pending || !canSubmit}
-            className="min-h-12 rounded-[1.15rem] bg-slate-950 px-4 text-[0.95rem] font-black text-white shadow-[0_12px_24px_rgba(15,23,42,0.18)] transition active:scale-[0.98] disabled:bg-[#d8d0c3] disabled:text-white/75 disabled:shadow-none"
+            className="min-h-12 rounded-md bg-slate-950 px-4 text-[0.95rem] font-black text-white shadow-[0_12px_24px_rgba(15,23,42,0.18)] transition active:scale-[0.98] disabled:bg-[#d8d0c3] disabled:text-white/75 disabled:shadow-none"
           >
             {pending ? '保存中' : '儲存修改'}
           </button>
@@ -2990,7 +2990,7 @@ export function TransactionForm({
             name="submitMode"
             value="stay"
             disabled={pending || !canSubmit}
-            className="min-h-12 rounded-[1.15rem] border border-[#d7e8e0] bg-[#f5fbf8] px-4 text-[0.95rem] font-black text-[#356f5f] transition active:scale-[0.98] disabled:border-transparent disabled:bg-[#edf3ef] disabled:text-slate-400"
+            className="min-h-12 rounded-md border border-[#d7e8e0] bg-[#f5fbf8] px-4 text-[0.95rem] font-black text-[#356f5f] transition active:scale-[0.98] disabled:border-transparent disabled:bg-[#edf3ef] disabled:text-slate-400"
           >
             {pending ? '保存中' : '再加一個'}
           </button>
@@ -2999,7 +2999,7 @@ export function TransactionForm({
             name="submitMode"
             value="ledger"
             disabled={pending || !canSubmit}
-            className="min-h-12 rounded-[1.15rem] bg-slate-950 px-4 text-[0.95rem] font-black text-white shadow-[0_12px_24px_rgba(15,23,42,0.18)] transition active:scale-[0.98] disabled:bg-[#d8d0c3] disabled:text-white/75 disabled:shadow-none"
+            className="min-h-12 rounded-md bg-slate-950 px-4 text-[0.95rem] font-black text-white shadow-[0_12px_24px_rgba(15,23,42,0.18)] transition active:scale-[0.98] disabled:bg-[#d8d0c3] disabled:text-white/75 disabled:shadow-none"
           >
             {pending ? '保存中' : '儲存提醒'}
           </button>
@@ -3014,7 +3014,7 @@ export function TransactionForm({
           name="submitMode"
           value="stay"
           disabled={pending || !canSubmit}
-          className="min-h-12 rounded-[1.15rem] border border-[#e7dccb] bg-[#fcfbf8] px-4 text-[0.95rem] font-black text-slate-700 transition active:scale-[0.98] disabled:border-transparent disabled:bg-[#eee8dd] disabled:text-slate-400"
+          className="min-h-12 rounded-md border border-[#e7dccb] bg-[#fcfbf8] px-4 text-[0.95rem] font-black text-slate-700 transition active:scale-[0.98] disabled:border-transparent disabled:bg-[#eee8dd] disabled:text-slate-400"
         >
           {pending ? '保存中' : '再記一筆'}
         </button>
@@ -3023,7 +3023,7 @@ export function TransactionForm({
           name="submitMode"
           value="ledger"
           disabled={pending || !canSubmit}
-          className="min-h-12 rounded-[1.15rem] bg-slate-950 px-4 text-[0.95rem] font-black text-white shadow-[0_12px_24px_rgba(15,23,42,0.18)] transition active:scale-[0.98] disabled:bg-[#d8d0c3] disabled:text-white/75 disabled:shadow-none"
+          className="min-h-12 rounded-md bg-slate-950 px-4 text-[0.95rem] font-black text-white shadow-[0_12px_24px_rgba(15,23,42,0.18)] transition active:scale-[0.98] disabled:bg-[#d8d0c3] disabled:text-white/75 disabled:shadow-none"
         >
           {pending ? '保存中' : '保存'}
         </button>
@@ -3047,7 +3047,7 @@ export function TransactionForm({
           className="w-full shrink-0 snap-center"
           aria-label={`${KIND_LABELS[pageKind]} 頁`}
         >
-          <section className="overflow-hidden rounded-[1.75rem] bg-[linear-gradient(180deg,#f4fbf7_0%,#ffffff_76%)] px-4 pb-2 pt-2 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
+          <section className="overflow-hidden bg-white px-4 pb-2 pt-2 border-b border-[#f0f0f0]">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-[0.68rem] font-black tracking-[0.18em] text-[#5b8c79]">提辦</p>
@@ -3063,7 +3063,7 @@ export function TransactionForm({
             <div className={`mt-4 h-1 rounded-full ${amountLineClass(pageKind)}`} />
           </section>
 
-          <section className="mt-2 overflow-hidden rounded-[2rem] bg-white shadow-[0_20px_50px_rgba(15,23,42,0.08)]">
+          <section className="overflow-hidden bg-white">
             <div className="flex min-h-[2.8rem] items-center justify-between gap-4 px-5">
               <FieldLabel tone="bg-[#4f8d7c]" label="類別" />
               <div className="flex flex-wrap justify-end gap-1.5">
@@ -3141,7 +3141,7 @@ export function TransactionForm({
           className="w-full shrink-0 snap-center"
           aria-label={`${KIND_LABELS[pageKind]} 頁`}
         >
-          <section className="overflow-hidden rounded-[1.75rem] bg-white px-4 pb-2 pt-2 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
+          <section className="overflow-hidden bg-white px-4 pb-2 pt-2 border-b border-[#f0f0f0]">
             {transferIsCrossCurrency ? (
               <div className="mt-4">
                 <TransferAmountPairRow
@@ -3197,7 +3197,7 @@ export function TransactionForm({
             <div className={`mt-3 h-1 rounded-full ${amountLineClass(pageKind)}`} />
           </section>
 
-          <section className="mt-2 overflow-hidden rounded-[2rem] bg-white shadow-[0_20px_50px_rgba(15,23,42,0.08)]">
+          <section className="overflow-hidden bg-white">
             <TransferAccountRow
               label="轉出"
               value={selectedAccount ? formatAccountLabel(selectedAccount) : '選擇轉出帳戶'}
@@ -3245,7 +3245,7 @@ export function TransactionForm({
         className="w-full shrink-0 snap-center"
         aria-label={`${KIND_LABELS[pageKind]} 頁`}
       >
-        <section className="overflow-hidden rounded-[1.75rem] bg-white px-4 pb-2 pt-2 shadow-[0_20px_50px_rgba(15,23,42,0.06)]">
+        <section className="overflow-hidden bg-white px-4 pb-2 pt-2 border-b border-[#f0f0f0]">
           <div className="flex items-start justify-between gap-3">
             <button
               type="button"
@@ -3283,7 +3283,7 @@ export function TransactionForm({
           <div className={`mt-3 h-1 rounded-full ${amountLineClass(pageKind)}`} />
         </section>
 
-        <section className="mt-2 overflow-hidden rounded-[2rem] bg-white shadow-[0_20px_50px_rgba(15,23,42,0.08)]">
+        <section className="overflow-hidden bg-white">
           <CategoryFieldRow
             value={pageSelectedCategory ? categoryPathById.get(pageSelectedCategory.id) ?? pageCategoryPath : pageCategoryPath}
             onOpen={openCategoryPicker}
@@ -3424,7 +3424,7 @@ export function TransactionForm({
                           type="button"
                           onClick={() => updateKind(item)}
                           aria-pressed={isActive}
-                          className={`flex min-h-[2.9rem] items-center justify-center rounded-[1.15rem] border text-[0.95rem] font-black tracking-[0.08em] transition active:scale-[0.98] ${
+                          className={`flex min-h-[2.9rem] items-center justify-center rounded-md border text-[0.95rem] font-black tracking-[0.08em] transition active:scale-[0.98] ${
                             isActive
                               ? `border-transparent ${keypadShortcutActiveClass(item)}`
                               : 'border-[#ece6dc] bg-[#fcfbf8] text-slate-900 shadow-[inset_0_1px_0_rgba(255,255,255,0.72)]'
@@ -3448,7 +3448,7 @@ export function TransactionForm({
                             onPointerDown={(event) => handleAmountPointerDown(event, key)}
                             onClick={() => handleAmountClick(key)}
                             disabled={pending}
-                            className="row-span-2 rounded-[1.15rem] bg-[linear-gradient(180deg,#ffbd59_0%,#ff9d2f_100%)] px-2 py-2 text-[0.9rem] font-black text-white shadow-[0_12px_24px_rgba(255,157,47,0.34)] disabled:opacity-50"
+                            className="row-span-2 rounded-md bg-[linear-gradient(180deg,#ffbd59_0%,#ff9d2f_100%)] px-2 py-2 text-[0.9rem] font-black text-white shadow-[0_12px_24px_rgba(255,157,47,0.34)] disabled:opacity-50"
                           >
                             確定
                           </button>
@@ -3469,7 +3469,7 @@ export function TransactionForm({
                           type="button"
                           onPointerDown={(event) => handleAmountPointerDown(event, key)}
                           onClick={() => handleAmountClick(key)}
-                          className={`min-h-[2.9rem] rounded-[1.15rem] text-[1.2rem] font-black shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] transition active:scale-[0.98] ${buttonClass}`}
+                          className={`min-h-[2.9rem] rounded-md text-[1.2rem] font-black shadow-[inset_0_1px_0_rgba(255,255,255,0.65)] transition active:scale-[0.98] ${buttonClass}`}
                         >
                           {label}
                         </button>

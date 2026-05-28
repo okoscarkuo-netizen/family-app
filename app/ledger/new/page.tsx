@@ -8,7 +8,6 @@ import {
 import { getTwdRateTable } from '@/lib/exchange-rates'
 import { TransactionForm } from '@/app/ledger/_components/TransactionForm'
 import { BottomNav } from '@/components/BottomNav'
-import { shellBackgroundClass } from '@/components/PageShell'
 import type { FamilyAccount } from '@/lib/finance/types'
 
 async function getActiveAccounts(): Promise<
@@ -47,7 +46,7 @@ export default async function NewTransactionPage({
 
   return (
     <>
-      <main className={shellBackgroundClass}>
+      <main className="min-h-screen bg-white text-slate-950">
         <section className="mx-auto min-h-screen w-full max-w-md">
           <TransactionForm
             accounts={accounts}
