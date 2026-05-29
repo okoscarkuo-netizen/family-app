@@ -196,11 +196,6 @@ export function AccountCard({ account, ledgerDelta, onOpen, onLongPressBalance }
                 隱藏
               </span>
             ) : null}
-            {isShared && !account.hidden ? (
-              <span className="rounded-full bg-[#ecfdf8] px-2 py-0.5 text-[0.65rem] font-black text-[#15957d]">
-                共用
-              </span>
-            ) : null}
           </span>
         </span>
 
