@@ -149,6 +149,17 @@ export function AccountCard({ account, ledgerDelta, onOpen, onLongPressBalance }
   const isNegative = displayBalance < 0
   const isFavorite = Boolean(account.favorite)
 
+  const reconcileDiff =
+    account.openingBalance != null && ledgerDelta !== undefined
+      ? Math.round((account.balance - account.openingBalance - ledgerDelta) * 100) / 100
+      : null
+  const reconcileDiffStr =
+    reconcileDiff === null
+      ? null
+      : (reconcileDiff >= 0 ? '+' : '') +
+        reconcileDiff.toLocaleString('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const balanceDateShort = account.balanceDate ? account.balanceDate.slice(5).replace('-', '/') : null
+
   return (
     <div
       className={`group relative flex min-h-[4.7rem] items-stretch transition active:bg-[#fbfaf7] ${
@@ -207,6 +218,18 @@ export function AccountCard({ account, ledgerDelta, onOpen, onLongPressBalance }
               {isHolding ? '按住中…' : balanceStr}
             </span>
             <span className="block text-right text-[0.68rem] font-bold text-slate-400">{account.currency}</span>
+            {balanceDateShort ? (
+              <span className="block text-right text-[0.62rem] font-bold text-slate-400">
+                {balanceDateShort}
+              </span>
+            ) : null}
+            {reconcileDiffStr !== null ? (
+              <span className={`block text-right text-[0.62rem] font-black ${
+                Math.abs(reconcileDiff!) < 0.005 ? 'text-[#15957d]' : 'text-[#c9563f]'
+              }`}>
+                差 {reconcileDiffStr}
+              </span>
+            ) : null}
           </span>
           <span className="text-xl leading-none text-slate-300">›</span>
         </span>
