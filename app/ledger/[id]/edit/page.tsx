@@ -22,7 +22,6 @@ async function getActiveAccounts(): Promise<
     .from('family_accounts')
     .select('id, name, currency, kind, balance, owner, shared, type')
     .eq('is_archived', false)
-    .eq('hidden', false)
     .order('sort_order')
   return (data ?? []) as Pick<
     FamilyAccount,
