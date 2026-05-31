@@ -145,7 +145,6 @@ export function AccountCard({ account, ledgerDelta, onOpen, onLongPressBalance }
     maximumFractionDigits: 2,
   })
   const group = getAccountGroup(account)
-  const isShared = isSharedAccount(account)
   const isNegative = displayBalance < 0
   const isFavorite = Boolean(account.favorite)
 
@@ -220,7 +219,7 @@ export function AccountCard({ account, ledgerDelta, onOpen, onLongPressBalance }
             ) : null}
             {reconcileDiffStr !== null ? (
               <span className={`block text-right text-[0.62rem] font-black ${
-                Math.abs(reconcileDiff!) < 0.005 ? 'text-[#15957d]' : 'text-[#c9563f]'
+                reconcileDiff! >= 0 ? 'text-[#15957d]' : 'text-[#c9563f]'
               }`}>
                 差 {reconcileDiffStr}
               </span>
