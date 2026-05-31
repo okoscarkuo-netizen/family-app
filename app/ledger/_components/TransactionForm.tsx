@@ -4,7 +4,6 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import type { KeyboardEvent, PointerEvent } from 'react'
 import { useRouter } from 'next/navigation'
-import { archiveCategory, createCategory, renameCategory } from '@/app/actions/categories'
 import {
   archiveMerchantGroup,
   createMerchantGroup,
@@ -31,6 +30,7 @@ import {
   type TwdRateTable,
 } from '@/lib/exchange-rates'
 import { getCategoryDisplayIcon } from '@/lib/category-icons'
+import { CategoryIcon } from '@/components/CategoryIcon'
 import { normalizeOwner } from '@/lib/finance/types'
 import type { FamilyAccount } from '@/lib/finance/types'
 
@@ -358,18 +358,6 @@ function resolveCategorySelection(
     parentId: firstGroup.parent.id,
     categoryId: firstGroup.children[0]?.id ?? firstGroup.parent.id,
   }
-}
-
-function buildChildOptions(group: CategoryPickerGroup | null): PickerOption[] {
-  if (!group) return []
-  if (group.children.length === 0) {
-    return [{ id: group.parent.id, label: `${getCategoryDisplayIcon(group.parent)} ${group.parent.name}` }]
-  }
-
-  return group.children.map((child) => ({
-    id: child.id,
-    label: `${getCategoryDisplayIcon(child)} ${child.name}`,
-  }))
 }
 
 function PickerWheel({
@@ -840,16 +828,41 @@ function CategoryPickerSheet({
   onClose: () => void
 }) {
   const groups = buildCategoryPickerGroups(categories, kind)
-  const selectedGroup = groups.find((group) => group.parent.id === selectedParentId) ?? groups[0] ?? null
-  const parentOptions = groups.map((group) => ({
-    id: group.parent.id,
-    label: `${getCategoryDisplayIcon(group.parent)} ${group.parent.name}`,
-  }))
-  const childOptions = selectedGroup ? buildChildOptions(selectedGroup) : []
-  const selectedChildLabel =
-    childOptions.find((option) => option.id === selectedCategoryId)?.label ?? '請選子分類'
+  const initialParentId =
+    groups.find((group) => group.parent.id === selectedParentId)?.parent.id ??
+    groups[0]?.parent.id ??
+    ''
+  const [activeParentId, setActiveParentId] = useState(initialParentId)
+
+  useEffect(() => {
+    if (!open) return
+    const next =
+      groups.find((group) => group.parent.id === selectedParentId)?.parent.id ??
+      groups[0]?.parent.id ??
+      ''
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setActiveParentId(next)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
+
+  const activeGroup = groups.find((group) => group.parent.id === activeParentId) ?? groups[0] ?? null
+  const children = activeGroup?.children ?? []
 
   if (typeof document === 'undefined') return null
+
+  function handlePickChild(childId: string) {
+    if (activeGroup && activeGroup.parent.id !== selectedParentId) {
+      onParentChange(activeGroup.parent.id)
+    }
+    onCategoryChange(childId)
+    onClose()
+  }
+
+  function handlePickParentWithoutChildren(parentId: string) {
+    onParentChange(parentId)
+    onCategoryChange(parentId)
+    onClose()
+  }
 
   return createPortal(
     <div
@@ -859,7 +872,7 @@ function CategoryPickerSheet({
       <button
         type="button"
         onClick={onClose}
-        className={`absolute inset-0 bg-[rgba(15,23,42,0.28)] transition ${open ? 'opacity-100' : 'opacity-0'}`}
+        className={`absolute inset-0 bg-[rgba(15,23,42,0.32)] transition ${open ? 'opacity-100' : 'opacity-0'}`}
         aria-label="關閉分類選擇"
       />
       <div
@@ -867,440 +880,107 @@ function CategoryPickerSheet({
           open ? 'translate-y-0' : 'translate-y-full'
         }`}
       >
-        <div className="relative z-10 mx-auto w-full max-w-md rounded-t-[2.2rem] bg-[#faf7f0] px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-3 shadow-[0_-24px_60px_rgba(15,23,42,0.2)]">
-          <div className="relative flex items-center justify-between">
+        <div className="relative z-10 mx-auto w-full max-w-md rounded-t-[1.8rem] bg-white pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-[0_-24px_60px_rgba(15,23,42,0.18)]">
+          {/* Header bar */}
+          <div className="flex items-center justify-between px-4 pt-3">
             <button
               type="button"
               onClick={onOpenSettings}
-              className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-slate-600 shadow-[0_10px_20px_rgba(15,23,42,0.08)] transition active:scale-[0.97]"
-              aria-label="分類設定"
-              title="分類設定"
+              className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 active:bg-slate-100"
+              aria-label="新增/管理分類"
+              title="新增/管理分類"
             >
-              <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none">
-                <path
-                  d="M12 8.25a3.75 3.75 0 1 0 0 7.5 3.75 3.75 0 0 0 0-7.5Z"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                />
-                <path
-                  d="M19.08 13.58c.06-.5.06-1.03 0-1.58l1.57-1.21-1.5-2.6-1.86.75a7.3 7.3 0 0 0-1.36-.78l-.28-1.98h-3l-.28 1.98c-.5.2-.96.46-1.38.78l-1.84-.75-1.5 2.6L8.92 12a7.5 7.5 0 0 0 0 1.58l-1.57 1.21 1.5 2.6 1.84-.75c.43.32.89.58 1.38.78l.28 1.98h3l.28-1.98c.49-.2.95-.46 1.36-.78l1.86.75 1.5-2.6-1.57-1.21Z"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinejoin="round"
-                />
+              <svg aria-hidden="true" viewBox="0 0 24 24" className="h-6 w-6" fill="none" strokeWidth="2" stroke="currentColor">
+                <path d="M12 5v14M5 12h14" strokeLinecap="round" />
               </svg>
             </button>
-            <div className="absolute left-1/2 top-1/2 h-1.5 w-14 -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-200" />
+            <div className="h-1.5 w-12 rounded-full bg-slate-200" />
             <button
               type="button"
               onClick={onClose}
-              className="rounded-full bg-white px-4 py-2 text-sm font-black text-slate-500 shadow-[0_10px_20px_rgba(15,23,42,0.08)]"
+              className="flex h-9 w-9 items-center justify-center rounded-full text-slate-500 active:bg-slate-100"
+              aria-label="關閉"
             >
-              完成
+              <svg aria-hidden="true" viewBox="0 0 24 24" className="h-6 w-6" fill="none" strokeWidth="2" stroke="currentColor">
+                <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
             </button>
           </div>
 
           {groups.length === 0 ? (
-            <div className="mt-4 rounded-[1.6rem] bg-white/90 px-4 py-10 text-center text-sm font-bold text-slate-400 shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
-              還沒有 {KIND_LABELS[kind]} 分類，點左上齒輪新增
+            <div className="px-4 py-12 text-center text-sm font-bold text-slate-400">
+              還沒有 {KIND_LABELS[kind]} 分類，點左上「+」新增
             </div>
           ) : (
-            <>
-              <div className="mt-4 grid grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] gap-3">
-                <div className="rounded-[1.6rem] bg-white/90 px-2 pb-2 pt-3 shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
-                  <div className="px-3 pb-2 text-xs font-black tracking-[0.16em] text-slate-400">
-                    一級分類
-                  </div>
-                  <PickerWheel
-                    items={parentOptions}
-                    selectedId={selectedGroup?.parent.id ?? ''}
-                    onSelect={onParentChange}
-                  />
-                </div>
-
-                <div className="rounded-[1.6rem] bg-white/90 px-2 pb-2 pt-3 shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
-                  <div className="flex items-center justify-between px-3 pb-2">
-                    <div className="text-xs font-black tracking-[0.16em] text-slate-400">二級分類</div>
-                    <div className="text-xs font-black text-slate-300">{selectedChildLabel}</div>
-                  </div>
-                  {childOptions.length > 0 ? (
-                    <PickerWheel
-                      items={childOptions}
-                      selectedId={selectedCategoryId}
-                      onSelect={onCategoryChange}
-                    />
-                  ) : (
-                    <div className="flex h-[calc(52px*5)] items-center justify-center px-4 text-center text-sm font-bold text-slate-400">
-                      此分類沒有子分類
-                    </div>
-                  )}
-                </div>
+            <div className="mt-2 flex" style={{ height: '60vh', maxHeight: '480px' }}>
+              {/* Left: parent list */}
+              <div className="w-[108px] shrink-0 overflow-y-auto bg-[#f5f5f7]">
+                {groups.map((group) => {
+                  const isActive = group.parent.id === activeParentId
+                  return (
+                    <button
+                      key={group.parent.id}
+                      type="button"
+                      onClick={() => setActiveParentId(group.parent.id)}
+                      className={`flex w-full items-center justify-center px-2 py-3 text-[15px] transition ${
+                        isActive
+                          ? 'bg-white font-black text-slate-900'
+                          : 'font-bold text-slate-500'
+                      }`}
+                    >
+                      <span className="truncate">{group.parent.name}</span>
+                    </button>
+                  )
+                })}
               </div>
-            </>
-          )}
-        </div>
-      </div>
-    </div>,
-    document.body,
-  )
-}
 
-function categoryKindLabel(kind: Kind) {
-  return `${KIND_LABELS[kind]}分類`
-}
-
-function CategoryManagerSheet({
-  open,
-  categories,
-  kind,
-  selectedCategoryId,
-  onCategoryUpsert,
-  onCategoryArchive,
-  onClose,
-}: {
-  open: boolean
-  categories: FamilyCategory[]
-  kind: TransactionKind
-  selectedCategoryId: string
-  onCategoryUpsert: (category: FamilyCategory) => void
-  onCategoryArchive: (archivedIds: string[]) => void
-  onClose: () => void
-}) {
-  const [query, setQuery] = useState('')
-  const [rootName, setRootName] = useState('')
-  const [childNames, setChildNames] = useState<Record<string, string>>({})
-  const [addingChildParentId, setAddingChildParentId] = useState<string | null>(null)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [editingName, setEditingName] = useState('')
-  const [pendingKey, setPendingKey] = useState<string | null>(null)
-  const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
-
-  const groups = buildCategoryPickerGroups(categories, kind)
-  const normalizedQuery = query.trim().toLocaleLowerCase('zh-TW')
-  const filteredGroups = normalizedQuery
-    ? groups
-      .map((group) => {
-        const parentMatches = group.parent.name.toLocaleLowerCase('zh-TW').includes(normalizedQuery)
-        const children = group.children.filter((child) => (
-          parentMatches || child.name.toLocaleLowerCase('zh-TW').includes(normalizedQuery)
-        ))
-        return parentMatches || children.length > 0 ? { ...group, children } : null
-      })
-      .filter((group): group is CategoryPickerGroup => group !== null)
-    : groups
-
-  function handleEnter(event: KeyboardEvent<HTMLInputElement>, action: () => void) {
-    if (event.key !== 'Enter') return
-
-    event.preventDefault()
-    action()
-  }
-
-  async function handleCreate(name: string, parentId: string | null) {
-    const normalizedName = name.trim()
-    if (!normalizedName) {
-      setNotice({ tone: 'error', text: '分類名稱不能空白。' })
-      return
-    }
-
-    const key = parentId ? `create-child-${parentId}` : 'create-root'
-    setPendingKey(key)
-    setNotice(null)
-
-    try {
-      const result = await createCategory({ kind, name: normalizedName, parentId })
-      if (!result.ok) {
-        setNotice({ tone: 'error', text: result.error })
-        return
-      }
-
-      onCategoryUpsert(result.category)
-      if (parentId) {
-        setChildNames((current) => ({ ...current, [parentId]: '' }))
-        setAddingChildParentId(null)
-      } else {
-        setRootName('')
-      }
-      setNotice({ tone: 'success', text: '分類已新增。' })
-    } finally {
-      setPendingKey(null)
-    }
-  }
-
-  async function handleRename() {
-    if (!editingId) return
-
-    const normalizedName = editingName.trim()
-    if (!normalizedName) {
-      setNotice({ tone: 'error', text: '分類名稱不能空白。' })
-      return
-    }
-
-    setPendingKey(`rename-${editingId}`)
-    setNotice(null)
-
-    try {
-      const result = await renameCategory({ id: editingId, name: normalizedName })
-      if (!result.ok) {
-        setNotice({ tone: 'error', text: result.error })
-        return
-      }
-
-      onCategoryUpsert(result.category)
-      setEditingId(null)
-      setEditingName('')
-      setNotice({ tone: 'success', text: '分類已更新。' })
-    } finally {
-      setPendingKey(null)
-    }
-  }
-
-  async function handleArchive(category: FamilyCategory) {
-    const message = category.parent_id
-      ? `封存「${category.name}」？`
-      : `封存「${category.name}」與底下所有二級分類？`
-    if (!window.confirm(message)) return
-
-    setPendingKey(`archive-${category.id}`)
-    setNotice(null)
-
-    try {
-      const result = await archiveCategory(category.id)
-      if (!result.ok) {
-        setNotice({ tone: 'error', text: result.error })
-        return
-      }
-
-      onCategoryArchive(result.archivedIds)
-      if (result.archivedIds.includes(selectedCategoryId)) {
-        setNotice({ tone: 'success', text: '分類已封存，請重新選擇分類。' })
-        return
-      }
-
-      setNotice({ tone: 'success', text: '分類已封存。' })
-    } finally {
-      setPendingKey(null)
-    }
-  }
-
-  function startEditing(category: FamilyCategory) {
-    setEditingId(category.id)
-    setEditingName(category.name)
-    setNotice(null)
-  }
-
-  function renderCategoryRow(category: FamilyCategory, depth: 'parent' | 'child') {
-    const isEditing = editingId === category.id
-    const isPending = pendingKey === `rename-${category.id}` || pendingKey === `archive-${category.id}`
-
-    return (
-      <div
-        key={category.id}
-        className={`flex min-h-[2.9rem] items-center gap-3 border-b border-[#f0ece5] bg-white px-4 ${
-          depth === 'child' ? 'pl-10' : ''
-        }`}
-      >
-        <span
-          className={`h-9 w-9 shrink-0 rounded-[0.85rem] border ${
-            depth === 'parent'
-              ? 'border-[#eadfce] bg-[#fff9ee]'
-              : 'border-[#e6f3ee] bg-[#f2fffa]'
-          }`}
-          aria-hidden="true"
-        />
-
-        {isEditing ? (
-          <input
-            type="text"
-            value={editingName}
-            onChange={(event) => setEditingName(event.target.value)}
-            onKeyDown={(event) => handleEnter(event, handleRename)}
-            className="min-w-0 flex-1 rounded-[1rem] border border-[#eadfce] bg-[#fcfbf8] px-3 py-2 text-[1rem] font-black text-slate-950 outline-none"
-            aria-label="分類名稱"
-            autoFocus
-          />
-        ) : (
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-[1rem] font-black text-slate-900">{category.name}</div>
-            <div className="mt-0.5 text-xs font-bold text-slate-400">
-              {depth === 'parent' ? '一級分類' : '二級分類'}
-            </div>
-          </div>
-        )}
-
-        {isEditing ? (
-          <div className="flex shrink-0 items-center gap-1.5">
-            <button
-              type="button"
-              onClick={handleRename}
-              disabled={Boolean(pendingKey)}
-              className="rounded-full bg-slate-950 px-3 py-2 text-xs font-black text-white disabled:opacity-50"
-            >
-              儲存
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setEditingId(null)
-                setEditingName('')
-              }}
-              disabled={Boolean(pendingKey)}
-              className="rounded-full bg-[#f4f1ea] px-3 py-2 text-xs font-black text-slate-500 disabled:opacity-50"
-            >
-              取消
-            </button>
-          </div>
-        ) : (
-          <div className="flex shrink-0 items-center gap-1.5">
-            {depth === 'parent' ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setAddingChildParentId(category.id)
-                  setNotice(null)
-                }}
-                disabled={Boolean(pendingKey)}
-                className="rounded-full bg-[#f2fbf7] px-3 py-2 text-xs font-black text-[#16866d] disabled:opacity-50"
-              >
-                二級
-              </button>
-            ) : null}
-            <button
-              type="button"
-              onClick={() => startEditing(category)}
-              disabled={Boolean(pendingKey)}
-              className="rounded-full bg-[#f4f1ea] px-3 py-2 text-xs font-black text-slate-600 disabled:opacity-50"
-            >
-              修改
-            </button>
-            <button
-              type="button"
-              onClick={() => handleArchive(category)}
-              disabled={isPending || Boolean(pendingKey)}
-              className="rounded-full bg-[#fff1ee] px-3 py-2 text-xs font-black text-[#c9563f] disabled:opacity-50"
-            >
-              封存
-            </button>
-          </div>
-        )}
-      </div>
-    )
-  }
-
-  if (typeof document === 'undefined') return null
-
-  return createPortal(
-    <div
-      className={`fixed inset-0 z-[80] bg-white transition ${
-        open ? 'pointer-events-auto translate-y-0 opacity-100' : 'pointer-events-none translate-y-4 opacity-0'
-      }`}
-      aria-hidden={!open}
-    >
-      <div className="mx-auto flex h-full w-full max-w-md flex-col bg-white">
-        <div className="shrink-0 border-b border-[#f1ede6] bg-white px-4 pb-3 pt-[calc(0.9rem+env(safe-area-inset-top))]">
-          <div className="grid grid-cols-[4rem_minmax(0,1fr)_4rem] items-center">
-            <div className="text-left text-sm font-black text-[#d8a72a]">{categoryKindLabel(kind)}</div>
-            <div className="text-center text-[1.05rem] font-black text-slate-950">分類設定</div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="justify-self-end rounded-full p-2 text-2xl leading-none text-slate-500"
-              aria-label="關閉分類設定"
-            >
-              ×
-            </button>
-          </div>
-
-          <label className="mt-4 flex min-h-11 items-center gap-2 rounded-full bg-[#f3f3f2] px-4">
-            <span className="text-lg text-slate-400" aria-hidden="true">⌕</span>
-            <input
-              type="text"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="快速搜尋分類"
-              className="ios-search-input min-w-0 flex-1 bg-transparent text-center font-black text-slate-700 outline-none placeholder:text-slate-400"
-              aria-label="快速搜尋分類"
-            />
-          </label>
-
-          <div className="mt-3 flex items-center gap-2 rounded-[1.25rem] border border-[#efe7dc] bg-[#fcfbf8] p-2">
-            <input
-              type="text"
-              value={rootName}
-              onChange={(event) => setRootName(event.target.value)}
-              onKeyDown={(event) => handleEnter(event, () => handleCreate(rootName, null))}
-              placeholder="新增一級分類"
-              className="ios-search-input min-w-0 flex-1 bg-transparent px-2 font-black text-slate-950 outline-none placeholder:text-slate-400"
-              aria-label="新增一級分類"
-            />
-            <button
-              type="button"
-              onClick={() => handleCreate(rootName, null)}
-              disabled={pendingKey === 'create-root'}
-              className="rounded-full bg-slate-950 px-4 py-2 text-sm font-black text-white disabled:opacity-50"
-            >
-              新增
-            </button>
-          </div>
-
-          {notice ? (
-            <div
-              className={`mt-3 rounded-[1rem] px-3 py-2 text-sm font-black ${
-                notice.tone === 'success'
-                  ? 'bg-[#ebfff7] text-[#187d5f]'
-                  : 'bg-[#fff3f2] text-[#c2413a]'
-              }`}
-            >
-              {notice.text}
-            </div>
-          ) : null}
-        </div>
-
-        <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto bg-[#fbfaf7] pb-[calc(1.5rem+env(safe-area-inset-bottom))]">
-          {filteredGroups.length > 0 ? (
-            filteredGroups.map((group) => (
-              <section key={group.parent.id} className="mt-3 border-y border-[#f1ede6]">
-                {renderCategoryRow(group.parent, 'parent')}
-
-                {addingChildParentId === group.parent.id ? (
-                  <div className="flex min-h-[3.2rem] items-center gap-2 border-b border-[#f0ece5] bg-[#fffdf9] px-4 pl-10">
-                    <input
-                      type="text"
-                      value={childNames[group.parent.id] ?? ''}
-                      onChange={(event) => (
-                        setChildNames((current) => ({ ...current, [group.parent.id]: event.target.value }))
-                      )}
-                      onKeyDown={(event) => handleEnter(event, () => handleCreate(childNames[group.parent.id] ?? '', group.parent.id))}
-                      placeholder={`新增「${group.parent.name}」二級分類`}
-                      className="min-w-0 flex-1 rounded-[1rem] border border-[#eadfce] bg-white px-3 py-2 text-sm font-black text-slate-950 outline-none placeholder:text-slate-400"
-                      aria-label="新增二級分類"
-                      autoFocus
-                    />
-                    <button
-                      type="button"
-                      onClick={() => handleCreate(childNames[group.parent.id] ?? '', group.parent.id)}
-                      disabled={pendingKey === `create-child-${group.parent.id}`}
-                      className="rounded-full bg-slate-950 px-3 py-2 text-xs font-black text-white disabled:opacity-50"
-                    >
-                      新增
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setAddingChildParentId(null)}
-                      disabled={Boolean(pendingKey)}
-                      className="rounded-full bg-[#f4f1ea] px-3 py-2 text-xs font-black text-slate-500 disabled:opacity-50"
-                    >
-                      取消
-                    </button>
-                  </div>
-                ) : null}
-
-                {group.children.map((child) => renderCategoryRow(child, 'child'))}
-              </section>
-            ))
-          ) : (
-            <div className="px-5 py-12 text-center text-sm font-bold text-slate-400">
-              沒有符合搜尋的分類
+              {/* Right: child grid */}
+              <div className="flex-1 overflow-y-auto px-3 py-2">
+                {activeGroup && (
+                  <>
+                    <div className="px-1 py-2 text-[13px] font-bold text-slate-400">
+                      {activeGroup.parent.name}
+                    </div>
+                    {children.length === 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => handlePickParentWithoutChildren(activeGroup.parent.id)}
+                        className={`mt-2 flex w-full flex-col items-center gap-1 rounded-[1rem] px-2 py-3 transition ${
+                          selectedCategoryId === activeGroup.parent.id
+                            ? 'bg-[#fff1e3]'
+                            : 'active:bg-slate-50'
+                        }`}
+                      >
+                        <CategoryIcon icon={getCategoryDisplayIcon(activeGroup.parent)} size={32} />
+                        <span className="text-[12px] font-bold text-slate-700">
+                          {activeGroup.parent.name}
+                        </span>
+                      </button>
+                    ) : (
+                      <div className="grid grid-cols-4 gap-1">
+                        {children.map((child) => {
+                          const isSelected = child.id === selectedCategoryId
+                          return (
+                            <button
+                              key={child.id}
+                              type="button"
+                              onClick={() => handlePickChild(child.id)}
+                              className={`flex flex-col items-center gap-1 rounded-[1rem] px-1 py-3 transition ${
+                                isSelected ? 'bg-[#fff1e3]' : 'active:bg-slate-50'
+                              }`}
+                            >
+                              <CategoryIcon icon={getCategoryDisplayIcon(child)} size={32} />
+                              <span className="line-clamp-1 text-[12px] font-bold text-slate-700">
+                                {child.name}
+                              </span>
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -2393,11 +2073,10 @@ export function TransactionForm({
   const [activeTransferAmountSide, setActiveTransferAmountSide] = useState<TransferAmountSide>('source')
   const [isKeypadVisible, setIsKeypadVisible] = useState(true)
   const [isCategoryPickerOpen, setIsCategoryPickerOpen] = useState(false)
-  const [isCategoryManagerOpen, setIsCategoryManagerOpen] = useState(false)
   const [isMerchantPickerOpen, setIsMerchantPickerOpen] = useState(false)
   const [isMerchantManagerOpen, setIsMerchantManagerOpen] = useState(false)
   const [isKindDragging, setIsKindDragging] = useState(false)
-  const [managedCategories, setManagedCategories] = useState(() => categories)
+  const [managedCategories] = useState(() => categories)
   const [managedMerchants, setManagedMerchants] = useState(() => merchants)
   const [managedMerchantGroups, setManagedMerchantGroups] = useState(() => merchantGroups)
   const [currency, setCurrency] = useState<Currency>(() => {
@@ -2542,7 +2221,7 @@ export function TransactionForm({
 
 
   useEffect(() => {
-    if (!isCategoryPickerOpen && !isCategoryManagerOpen && !isMerchantPickerOpen && !isMerchantManagerOpen) return
+    if (!isCategoryPickerOpen && !isMerchantPickerOpen && !isMerchantManagerOpen) return
 
     const previousOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -2550,7 +2229,7 @@ export function TransactionForm({
     return () => {
       document.body.style.overflow = previousOverflow
     }
-  }, [isCategoryPickerOpen, isCategoryManagerOpen, isMerchantPickerOpen, isMerchantManagerOpen])
+  }, [isCategoryPickerOpen, isMerchantPickerOpen, isMerchantManagerOpen])
 
   async function handleSubmit(formData: FormData) {
     if (!canSubmit) return
@@ -2689,7 +2368,6 @@ export function TransactionForm({
     if (nextKind === kind) return
     if (isEditMode && nextKind === 'reminder') return
     setIsCategoryPickerOpen(false)
-    setIsCategoryManagerOpen(false)
     setIsMerchantPickerOpen(false)
     setIsMerchantManagerOpen(false)
     setKind(nextKind)
@@ -2751,7 +2429,6 @@ export function TransactionForm({
 
   function openCategoryPicker() {
     setIsKeypadVisible(false)
-    setIsCategoryManagerOpen(false)
     setIsMerchantPickerOpen(false)
     setIsMerchantManagerOpen(false)
     setIsCategoryPickerOpen(true)
@@ -2762,13 +2439,12 @@ export function TransactionForm({
     setIsCategoryPickerOpen(false)
     setIsMerchantPickerOpen(false)
     setIsMerchantManagerOpen(false)
-    setIsCategoryManagerOpen(true)
+    router.push('/categories')
   }
 
   function openMerchantPicker() {
     setIsKeypadVisible(false)
     setIsCategoryPickerOpen(false)
-    setIsCategoryManagerOpen(false)
     setIsMerchantManagerOpen(false)
     setIsMerchantPickerOpen(true)
   }
@@ -2776,33 +2452,8 @@ export function TransactionForm({
   function openMerchantManager() {
     setIsKeypadVisible(false)
     setIsCategoryPickerOpen(false)
-    setIsCategoryManagerOpen(false)
     setIsMerchantManagerOpen(true)
     setIsMerchantPickerOpen(false)
-  }
-
-  function handleCategoryUpsert(category: FamilyCategory) {
-    setManagedCategories((current) => {
-      const existingIndex = current.findIndex((item) => item.id === category.id)
-      if (existingIndex === -1) return [...current, category]
-
-      return current.map((item) => (item.id === category.id ? category : item))
-    })
-    router.refresh()
-  }
-
-  function handleCategoryArchive(archivedIds: string[]) {
-    const archivedIdSet = new Set(archivedIds)
-    const nextCategories = managedCategories.map((category) => (
-      archivedIdSet.has(category.id) ? { ...category, is_archived: true } : category
-    ))
-
-    setManagedCategories(nextCategories)
-    if (archivedIdSet.has(resolvedCategoryId) || archivedIdSet.has(resolvedParentId)) {
-      const nextSelection = resolveCategorySelection(buildCategoryPickerGroups(nextCategories, transactionKind), '')
-      setCategoryId(nextSelection.categoryId)
-    }
-    router.refresh()
   }
 
   function handleMerchantGroupUpsert(group: FamilyMerchantGroup) {
@@ -3524,18 +3175,6 @@ export function TransactionForm({
         onOpenSettings={openCategoryManager}
         onClose={() => setIsCategoryPickerOpen(false)}
       />
-
-      {isCategoryManagerOpen ? (
-        <CategoryManagerSheet
-          open={isCategoryManagerOpen}
-          categories={managedCategories}
-          kind={transactionKind}
-          selectedCategoryId={resolvedCategoryId}
-          onCategoryUpsert={handleCategoryUpsert}
-          onCategoryArchive={handleCategoryArchive}
-          onClose={() => setIsCategoryManagerOpen(false)}
-        />
-      ) : null}
 
       {isMerchantPickerOpen ? (
         <MerchantPickerSheet

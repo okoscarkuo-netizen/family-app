@@ -6,6 +6,7 @@ import {
 } from '@/lib/family-transactions'
 import { softSurfaceClass } from '@/components/PageShell'
 import { getCategoryDisplayIcon } from '@/lib/category-icons'
+import { CategoryIcon } from '@/components/CategoryIcon'
 
 type LedgerAccount = {
   id: string
@@ -189,7 +190,11 @@ export function TransactionList({ transactions, accounts, currentAccountId, retu
                     className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[0.58rem] font-semibold leading-none tracking-[-0.02em] ${iconClass()}`}
                     aria-hidden="true"
                   >
-                    {getTransactionIcon(tx)}
+                    {tx.category ? (
+                      <CategoryIcon icon={getCategoryDisplayIcon(tx.category)} size={18} />
+                    ) : (
+                      getTransactionIcon(tx)
+                    )}
                   </div>
 
                   <div className="min-w-0 flex-1">
@@ -209,14 +214,31 @@ export function TransactionList({ transactions, accounts, currentAccountId, retu
                   </div>
 
                   <div className="flex w-[6.1rem] shrink-0 flex-col items-end text-right">
-                    <div className={`whitespace-nowrap text-[0.92rem] font-semibold leading-[1.1rem] ${amountClass(tx.kind)}`}>
-                      {tx.kind === 'transfer' ? (() => {
-                        const transfer = getTransferDisplayAmounts(tx)
-                        const primary = formatTransferMoney(transfer.sourceAmount, transfer.sourceCurrency)
-                        if (!transfer.isCrossCurrency) return primary
-                        return `${primary} → ${formatTransferMoney(transfer.targetAmount, transfer.targetCurrency)}`
-                      })() : formatMoney(tx.amount, tx.currency)}
-                    </div>
+                    {tx.kind === 'transfer' ? (() => {
+                      const transfer = getTransferDisplayAmounts(tx)
+                      const primary = formatTransferMoney(transfer.sourceAmount, transfer.sourceCurrency)
+                      if (!transfer.isCrossCurrency) {
+                        return (
+                          <div className={`whitespace-nowrap text-[0.92rem] font-semibold leading-[1.1rem] ${amountClass(tx.kind)}`}>
+                            {primary}
+                          </div>
+                        )
+                      }
+                      return (
+                        <>
+                          <div className={`whitespace-nowrap text-[0.92rem] font-semibold leading-[1.1rem] ${amountClass(tx.kind)}`}>
+                            {primary}
+                          </div>
+                          <div className="whitespace-nowrap text-[0.75rem] font-medium leading-[1.1rem] text-[#a8adb3]">
+                            → {formatTransferMoney(transfer.targetAmount, transfer.targetCurrency)}
+                          </div>
+                        </>
+                      )
+                    })() : (
+                      <div className={`whitespace-nowrap text-[0.92rem] font-semibold leading-[1.1rem] ${amountClass(tx.kind)}`}>
+                        {formatMoney(tx.amount, tx.currency)}
+                      </div>
+                    )}
                   </div>
                 </Link>
               )
