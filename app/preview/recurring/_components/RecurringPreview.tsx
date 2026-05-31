@@ -114,107 +114,103 @@ function MockTransactionForm() {
         <span className="text-[1rem] font-black text-slate-400">無</span>
       </div>
 
-      {/* === 週期區塊（重點） === */}
-      <div className={`mt-2 border-t border-[#efebe4] transition ${recurringOn ? 'bg-[#fff8ed]' : 'bg-white'}`}>
-        <button
-          type="button"
-          onClick={() => setRecurringOn(!recurringOn)}
-          className="flex min-h-[3.2rem] w-full items-center justify-between px-5 text-left"
-        >
-          <div className="flex items-center gap-3">
-            <span className={`flex h-7 w-7 items-center justify-center rounded-full text-base transition ${
-              recurringOn ? 'bg-[#d8a72a] text-white' : 'bg-[#f1ede6] text-slate-500'
-            }`}>
-              🔁
-            </span>
-            <div>
-              <div className="text-[0.95rem] font-black text-slate-900">週期</div>
-              <div className="text-[0.72rem] font-bold text-slate-400">
-                {recurringOn ? '自動定期重複' : '一次性交易（點此設為定期）'}
-              </div>
+      {/* === 週期（隱藏式：未啟用只顯示小標籤，點下去才展開） === */}
+      {!recurringOn ? (
+        <div className="px-5 py-4">
+          <button
+            type="button"
+            onClick={() => setRecurringOn(true)}
+            className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-[#d8c4a0] bg-[#fff8ed] px-3 py-1.5 text-[0.78rem] font-black text-[#a37a1c] transition active:bg-[#fdeacf]"
+          >
+            <span>＋</span>
+            <span>週期</span>
+          </button>
+        </div>
+      ) : (
+        <div className="border-t border-[#efebe4] bg-[#fff8ed] px-5 py-4">
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="text-base">🔁</span>
+              <span className="text-[0.95rem] font-black text-slate-900">週期設定</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setRecurringOn(false)}
+              className="rounded-full bg-white px-3 py-1 text-[0.72rem] font-black text-slate-500"
+            >
+              移除
+            </button>
+          </div>
+
+          {/* 頻率 */}
+          <div className="mb-3">
+            <div className="mb-2 text-[0.72rem] font-black tracking-[0.12em] text-slate-500">頻率</div>
+            <div className="grid grid-cols-4 gap-1.5">
+              {(['weekly', 'monthly', 'quarterly', 'yearly'] as Frequency[]).map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => setFrequency(f)}
+                  className={`rounded-full py-2 text-[0.85rem] font-black transition ${
+                    frequency === f ? 'bg-slate-900 text-white' : 'bg-white text-slate-500'
+                  }`}
+                >
+                  {FREQ_LABELS[f]}
+                </button>
+              ))}
             </div>
           </div>
-          <div className={`relative h-6 w-11 rounded-full transition ${recurringOn ? 'bg-[#d8a72a]' : 'bg-slate-200'}`}>
-            <div
-              className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition ${
-                recurringOn ? 'left-5' : 'left-0.5'
-              }`}
-            />
-          </div>
-        </button>
 
-        {recurringOn ? (
-          <div className="space-y-3 px-5 pb-4">
-            {/* 頻率 */}
-            <div>
-              <div className="mb-2 text-[0.72rem] font-black tracking-[0.12em] text-slate-500">頻率</div>
-              <div className="grid grid-cols-4 gap-1.5">
-                {(['weekly', 'monthly', 'quarterly', 'yearly'] as Frequency[]).map((f) => (
-                  <button
-                    key={f}
-                    type="button"
-                    onClick={() => setFrequency(f)}
-                    className={`rounded-full py-2 text-[0.85rem] font-black transition ${
-                      frequency === f ? 'bg-slate-900 text-white' : 'bg-white text-slate-500'
-                    }`}
-                  >
-                    {FREQ_LABELS[f]}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* 結束方式 */}
-            <div>
-              <div className="mb-2 text-[0.72rem] font-black tracking-[0.12em] text-slate-500">結束方式</div>
-              <div className="space-y-1.5">
+          {/* 結束方式 */}
+          <div className="mb-3">
+            <div className="mb-2 text-[0.72rem] font-black tracking-[0.12em] text-slate-500">結束方式</div>
+            <div className="space-y-1.5">
+              <button
+                type="button"
+                onClick={() => setEndType('forever')}
+                className={`flex w-full items-center justify-between rounded-[1rem] px-4 py-2.5 text-left transition ${
+                  endType === 'forever' ? 'bg-white shadow-sm' : 'bg-transparent'
+                }`}
+              >
+                <span className="text-[0.95rem] font-black text-slate-900">一直重複</span>
+                <span className={`h-4 w-4 rounded-full border-2 ${
+                  endType === 'forever' ? 'border-[#d8a72a] bg-[#d8a72a]' : 'border-slate-300'
+                }`} />
+              </button>
+              <div
+                className={`flex items-center justify-between rounded-[1rem] px-4 py-2.5 transition ${
+                  endType === 'count' ? 'bg-white shadow-sm' : 'bg-transparent'
+                }`}
+              >
                 <button
                   type="button"
-                  onClick={() => setEndType('forever')}
-                  className={`flex w-full items-center justify-between rounded-[1rem] px-4 py-2.5 text-left transition ${
-                    endType === 'forever' ? 'bg-white shadow-sm' : 'bg-transparent'
-                  }`}
+                  onClick={() => setEndType('count')}
+                  className="flex flex-1 items-center gap-2 text-left"
                 >
-                  <span className="text-[0.95rem] font-black text-slate-900">一直重複</span>
-                  <span className={`h-4 w-4 rounded-full border-2 ${
-                    endType === 'forever' ? 'border-[#d8a72a] bg-[#d8a72a]' : 'border-slate-300'
-                  }`} />
+                  <span className="text-[0.95rem] font-black text-slate-900">共</span>
+                  <input
+                    type="number"
+                    value={endCount}
+                    onChange={(e) => setEndCount(Number(e.target.value))}
+                    onFocus={() => setEndType('count')}
+                    className="w-14 rounded-md border border-slate-200 bg-white px-2 py-1 text-center text-[0.95rem] font-black text-slate-900 outline-none"
+                  />
+                  <span className="text-[0.95rem] font-black text-slate-900">次</span>
                 </button>
-                <div
-                  className={`flex items-center justify-between rounded-[1rem] px-4 py-2.5 transition ${
-                    endType === 'count' ? 'bg-white shadow-sm' : 'bg-transparent'
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setEndType('count')}
-                    className="flex flex-1 items-center gap-2 text-left"
-                  >
-                    <span className="text-[0.95rem] font-black text-slate-900">共</span>
-                    <input
-                      type="number"
-                      value={endCount}
-                      onChange={(e) => setEndCount(Number(e.target.value))}
-                      onFocus={() => setEndType('count')}
-                      className="w-14 rounded-md border border-slate-200 bg-white px-2 py-1 text-center text-[0.95rem] font-black text-slate-900 outline-none"
-                    />
-                    <span className="text-[0.95rem] font-black text-slate-900">次</span>
-                  </button>
-                  <span className={`h-4 w-4 rounded-full border-2 ${
-                    endType === 'count' ? 'border-[#d8a72a] bg-[#d8a72a]' : 'border-slate-300'
-                  }`} />
-                </div>
+                <span className={`h-4 w-4 rounded-full border-2 ${
+                  endType === 'count' ? 'border-[#d8a72a] bg-[#d8a72a]' : 'border-slate-300'
+                }`} />
               </div>
             </div>
-
-            {/* 預覽 */}
-            <div className="rounded-[1rem] bg-white px-4 py-3">
-              <div className="text-[0.7rem] font-black tracking-[0.12em] text-slate-400">下次自動產生</div>
-              <div className="mt-0.5 text-[0.95rem] font-black text-slate-900">{nextDate}</div>
-            </div>
           </div>
-        ) : null}
-      </div>
+
+          {/* 預覽 */}
+          <div className="rounded-[1rem] bg-white px-4 py-3">
+            <div className="text-[0.7rem] font-black tracking-[0.12em] text-slate-400">下次自動產生</div>
+            <div className="mt-0.5 text-[0.95rem] font-black text-slate-900">{nextDate}</div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
