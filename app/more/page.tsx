@@ -1,6 +1,5 @@
 import Link from 'next/link'
 import { BottomNav } from '@/components/BottomNav'
-import { PasskeyRegistrationCard } from './_components/PasskeyRegistrationCard'
 
 const quickLinks = [
   {
@@ -12,6 +11,16 @@ const quickLinks = [
     href: '/merchants',
     title: '商家管理',
     description: '編輯商家名稱與所屬分類。',
+  },
+  {
+    href: '/recurring',
+    title: '定期交易',
+    description: '管理已建立的定期規則（暫停 / 編輯 / 刪除）。',
+  },
+  {
+    href: '/more/passkeys',
+    title: 'Passkey 管理',
+    description: '用指紋或 Face ID 快速登入，管理已註冊的裝置。',
   },
 ]
 
@@ -33,8 +42,6 @@ export default function MorePage() {
                 把家庭設定、分類與資料管理集中在這裡，先從常用入口開始。
               </p>
             </section>
-
-            <PasskeyRegistrationCard />
 
             <section className="rounded-[1.35rem] border border-[#ece4d8] bg-white p-2 shadow-[0_10px_28px_rgba(15,23,42,0.06)]">
               <p className="px-3 pb-2 pt-2 text-[0.72rem] font-black tracking-[0.16em] text-slate-400">
