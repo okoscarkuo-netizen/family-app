@@ -951,7 +951,7 @@ function CategoryPickerSheet({
                             : 'active:bg-slate-50'
                         }`}
                       >
-                        <CategoryIcon icon={getCategoryDisplayIcon(activeGroup.parent)} size={44} />
+                        <CategoryIcon icon={getCategoryDisplayIcon(activeGroup.parent)} size={52} />
                         <span className="text-[12px] font-bold text-slate-700">
                           {activeGroup.parent.name}
                         </span>
@@ -969,7 +969,7 @@ function CategoryPickerSheet({
                                 isSelected ? 'bg-[#fff1e3]' : 'active:bg-slate-50'
                               }`}
                             >
-                              <CategoryIcon icon={getCategoryDisplayIcon(child)} size={44} />
+                              <CategoryIcon icon={getCategoryDisplayIcon(child)} size={52} />
                               <span className="line-clamp-1 text-[12px] font-bold text-slate-700">
                                 {child.name}
                               </span>

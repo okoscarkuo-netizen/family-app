@@ -207,8 +207,8 @@ export function CategoryManager({ initialCategories }: Props) {
         {isEditing ? (
           <div className="px-4 py-3">
             <div className="flex items-start gap-3">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center">
-                <CategoryIcon icon={previewIcon} size={44} />
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden">
+                <CategoryIcon icon={previewIcon} size={48} />
               </div>
 
               <div className="min-w-0 flex-1">
@@ -256,7 +256,7 @@ export function CategoryManager({ initialCategories }: Props) {
                               : 'border-[#e3e4e8] bg-white'
                           }`}
                         >
-                          <CategoryIcon icon={choice} size={40} />
+                          <CategoryIcon icon={choice} size={52} />
                         </button>
                       ))}
                     </div>
@@ -301,8 +301,8 @@ export function CategoryManager({ initialCategories }: Props) {
           </div>
         ) : (
           <div className="flex min-h-[4.35rem] items-center gap-3 px-4 py-3">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center">
-              <CategoryIcon icon={getCategoryDisplayIcon(category)} size={44} />
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden">
+              <CategoryIcon icon={getCategoryDisplayIcon(category)} size={48} />
             </div>
 
             <div className="min-w-0 flex-1">

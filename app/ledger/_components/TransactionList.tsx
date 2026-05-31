@@ -187,7 +187,7 @@ export function TransactionList({ transactions, accounts, currentAccountId, retu
                   aria-label={`查看 ${getTransactionTitle(tx, accountNames)}`}
                 >
                   {tx.category ? (
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center" aria-hidden="true">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden" aria-hidden="true">
                       <CategoryIcon icon={getCategoryDisplayIcon(tx.category)} size={40} />
                     </div>
                   ) : (
