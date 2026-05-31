@@ -12,7 +12,8 @@ export async function middleware(request: NextRequest) {
     isLoginPage ||
     isAuthCallback ||
     isPublicAsset ||
-    request.nextUrl.pathname.startsWith('/api/cron/')
+    request.nextUrl.pathname.startsWith('/api/cron/') ||
+    request.nextUrl.pathname.startsWith('/preview/')
 
   const hasAuthCookie = request.cookies.getAll().some((cookie) => cookie.name.includes('auth-token'))
 
