@@ -13,6 +13,7 @@ import {
   updateMerchant,
 } from '@/app/actions/merchant-groups'
 import { createMaintenanceReminder } from '@/app/actions/reminders'
+import { createRecurringTransaction } from '@/app/actions/recurring'
 import { createTransaction, deleteTransaction, updateTransaction } from '@/app/actions/transactions'
 import {
   buildCategoryPickerGroups,
@@ -2109,6 +2110,10 @@ export function TransactionForm({
       : 'Oscar',
   )
   const [note, setNote] = useState(isEditMode ? transaction.note ?? '' : '')
+  const [recurringOn, setRecurringOn] = useState(false)
+  const [recurringFrequency, setRecurringFrequency] = useState<'weekly' | 'monthly' | 'quarterly' | 'yearly'>('monthly')
+  const [recurringEndType, setRecurringEndType] = useState<'forever' | 'count'>('forever')
+  const [recurringEndCount, setRecurringEndCount] = useState<number>(12)
   const [message, setMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
   const availableKinds = useMemo(
     () => (isEditMode ? KINDS.filter((item) => item !== 'reminder') : KINDS),
@@ -2308,6 +2313,31 @@ export function TransactionForm({
       if (!result.ok) {
         setMessage({ tone: 'error', text: result.error })
         return
+      }
+
+      if (!isEditMode && recurringOn && kind !== 'reminder' && resolvedCategoryId && resolvedAccountId) {
+        const startDate = occurredAt.slice(0, 10)
+        const recurringResult = await createRecurringTransaction({
+          name: merchant.trim() || (selectedCategory?.name ?? '定期交易'),
+          kind: kind as 'income' | 'expense' | 'transfer',
+          amount: amountValue,
+          currency,
+          accountId: resolvedAccountId,
+          targetAccountId: kind === 'transfer' ? (resolvedToAccountId || null) : null,
+          targetAmount: kind === 'transfer' ? transferTargetAmount : null,
+          targetCurrency: kind === 'transfer' ? transferTargetCurrency : null,
+          categoryId: resolvedCategoryId,
+          merchantId: null,
+          owner,
+          frequency: recurringFrequency,
+          startDate,
+          endType: recurringEndType,
+          endCount: recurringEndType === 'count' ? recurringEndCount : null,
+          notes: note || null,
+        })
+        if (!recurringResult.ok) {
+          console.error('createRecurringTransaction failed:', recurringResult.error)
+        }
       }
 
       if (kind === 'reminder') {
@@ -2707,6 +2737,92 @@ export function TransactionForm({
     const pageCategoryPath = categoryPathById.get(pageCategorySelection.categoryId) ?? '選擇分類'
     const pageSelectedCategory = categoryById.get(pageCategorySelection.categoryId) ?? null
 
+    const recurringSectionJsx = isEditMode || pageKind === 'reminder' ? null : (!recurringOn ? (
+      <div className="px-5 py-4">
+        <button
+          type="button"
+          onClick={() => setRecurringOn(true)}
+          className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-[#d8c4a0] bg-[#fff8ed] px-3 py-1.5 text-[0.78rem] font-black text-[#a37a1c] active:bg-[#fdeacf]"
+        >
+          <span>＋</span>
+          <span>週期</span>
+        </button>
+      </div>
+    ) : (
+      <div className="border-t border-[#efebe4] bg-[#fff8ed] px-5 py-4">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="text-base">🔁</span>
+            <span className="text-[0.95rem] font-black text-slate-900">週期設定</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setRecurringOn(false)}
+            className="rounded-full bg-white px-3 py-1 text-[0.72rem] font-black text-slate-500"
+          >
+            移除
+          </button>
+        </div>
+        <div className="mb-3">
+          <div className="mb-2 text-[0.72rem] font-black tracking-[0.12em] text-slate-500">頻率</div>
+          <div className="grid grid-cols-4 gap-1.5">
+            {(['weekly', 'monthly', 'quarterly', 'yearly'] as const).map((f) => (
+              <button
+                key={f}
+                type="button"
+                onClick={() => setRecurringFrequency(f)}
+                className={`rounded-full py-2 text-[0.85rem] font-black ${
+                  recurringFrequency === f ? 'bg-slate-900 text-white' : 'bg-white text-slate-500'
+                }`}
+              >
+                {f === 'weekly' ? '每週' : f === 'monthly' ? '每月' : f === 'quarterly' ? '每季' : '每年'}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div className="mb-2 text-[0.72rem] font-black tracking-[0.12em] text-slate-500">結束方式</div>
+          <div className="space-y-1.5">
+            <button
+              type="button"
+              onClick={() => setRecurringEndType('forever')}
+              className={`flex w-full items-center justify-between rounded-[1rem] px-4 py-2.5 text-left ${
+                recurringEndType === 'forever' ? 'bg-white shadow-sm' : 'bg-transparent'
+              }`}
+            >
+              <span className="text-[0.95rem] font-black text-slate-900">一直重複</span>
+              <span className={`h-4 w-4 rounded-full border-2 ${
+                recurringEndType === 'forever' ? 'border-[#d8a72a] bg-[#d8a72a]' : 'border-slate-300'
+              }`} />
+            </button>
+            <div className={`flex items-center justify-between rounded-[1rem] px-4 py-2.5 ${
+              recurringEndType === 'count' ? 'bg-white shadow-sm' : 'bg-transparent'
+            }`}>
+              <button
+                type="button"
+                onClick={() => setRecurringEndType('count')}
+                className="flex flex-1 items-center gap-2 text-left"
+              >
+                <span className="text-[0.95rem] font-black text-slate-900">共</span>
+                <input
+                  type="number"
+                  min="1"
+                  value={recurringEndCount}
+                  onChange={(e) => setRecurringEndCount(Math.max(1, Number(e.target.value)))}
+                  onFocus={() => setRecurringEndType('count')}
+                  className="w-14 rounded-md border border-slate-200 bg-white px-2 py-1 text-center text-[0.95rem] font-black text-slate-900 outline-none"
+                />
+                <span className="text-[0.95rem] font-black text-slate-900">次</span>
+              </button>
+              <span className={`h-4 w-4 rounded-full border-2 ${
+                recurringEndType === 'count' ? 'border-[#d8a72a] bg-[#d8a72a]' : 'border-slate-300'
+              }`} />
+            </div>
+          </div>
+        </div>
+      </div>
+    ))
+
     if (pageKind === 'reminder') {
       return (
         <article
@@ -2901,6 +3017,7 @@ export function TransactionForm({
               value={note}
               onChange={setNote}
             />
+            {recurringSectionJsx}
           </section>
         </article>
       )
@@ -2985,6 +3102,7 @@ export function TransactionForm({
             value={note}
             onChange={setNote}
           />
+          {recurringSectionJsx}
         </section>
       </article>
     )
