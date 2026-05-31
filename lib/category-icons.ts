@@ -195,7 +195,8 @@ const CATEGORY_KEYWORD_ICONS: Array<[string[], string]> = [
   // 娛樂
   [['電影', 'movie'], 'svg:109_電影'],
   [['串流', '影音', '影視', 'Netflix', 'streaming'], 'svg:110_串流訂閱'],
-  [['音樂', 'music', 'Spotify', '演唱會'], 'svg:111_音樂'],
+  [['音樂', 'music', 'Spotify'], 'svg:111_音樂'],
+  [['演唱會', '音樂會', '表演'], 'svg:114_演唱會'],
   [['遊戲', '電玩', '手遊', 'game'], 'svg:112_遊戲'],
   [['KTV', 'ktv', '唱歌', 'karaoke'], 'svg:113_KTV'],
   [['展覽', '博物館', '美術館'], 'svg:115_展覽'],
