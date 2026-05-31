@@ -207,8 +207,8 @@ export function CategoryManager({ initialCategories }: Props) {
         {isEditing ? (
           <div className="px-4 py-3">
             <div className="flex items-start gap-3">
-              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[0.85rem] border border-[#e3e4e8] bg-[#f7f7f5]">
-                <CategoryIcon icon={previewIcon} size={36} />
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center">
+                <CategoryIcon icon={previewIcon} size={44} />
               </div>
 
               <div className="min-w-0 flex-1">
@@ -301,8 +301,8 @@ export function CategoryManager({ initialCategories }: Props) {
           </div>
         ) : (
           <div className="flex min-h-[4.35rem] items-center gap-3 px-4 py-3">
-            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[0.85rem] border border-[#e3e4e8] bg-[#f7f7f5]">
-              <CategoryIcon icon={getCategoryDisplayIcon(category)} size={36} />
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center">
+              <CategoryIcon icon={getCategoryDisplayIcon(category)} size={44} />
             </div>
 
             <div className="min-w-0 flex-1">
