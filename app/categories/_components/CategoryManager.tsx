@@ -20,6 +20,7 @@ import {
   getCategoryDisplayIcon,
   normalizeCategoryIcon,
 } from '@/lib/category-icons'
+import { CategoryIcon } from '@/components/CategoryIcon'
 
 type Props = {
   initialCategories: FamilyCategory[]
@@ -187,6 +188,7 @@ export function CategoryManager({ initialCategories }: Props) {
     setEditingId(category.id)
     setEditingName(category.name)
     setEditingIconDraft(category.icon ?? '')
+    setAddingChildParentId(null)
     setNotice(null)
   }
 
@@ -205,8 +207,8 @@ export function CategoryManager({ initialCategories }: Props) {
         {isEditing ? (
           <div className="px-4 py-3">
             <div className="flex items-start gap-3">
-              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[0.85rem] border border-[#e3e4e8] bg-[#f7f7f5] text-[0.82rem] font-black tracking-[-0.02em] text-[#5e646d]">
-                {previewIcon}
+              <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[0.85rem] border border-[#e3e4e8] bg-[#f7f7f5]">
+                <CategoryIcon icon={previewIcon} size={36} />
               </div>
 
               <div className="min-w-0 flex-1">
@@ -214,7 +216,15 @@ export function CategoryManager({ initialCategories }: Props) {
                   type="text"
                   value={editingName}
                   onChange={(event) => setEditingName(event.target.value)}
-                  onKeyDown={(event) => handleEnter(event, handleSaveCategory)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      setEditingId(null)
+                      setEditingName('')
+                      setEditingIconDraft('')
+                      return
+                    }
+                    handleEnter(event, handleSaveCategory)
+                  }}
                   className="min-w-0 w-full rounded-[1rem] border border-[#eadfce] bg-[#fcfbf8] px-3 py-2 text-[1rem] font-black text-slate-950 outline-none"
                   aria-label="分類名稱"
                   autoFocus
@@ -226,27 +236,27 @@ export function CategoryManager({ initialCategories }: Props) {
                     <input
                       type="text"
                       value={editingIconDraft}
-                      onChange={(event) => setEditingIconDraft(event.target.value.slice(0, 3))}
-                      className="w-24 rounded-full border border-transparent bg-white/80 px-3 py-1.5 text-right text-sm font-black text-slate-950 outline-none placeholder:text-slate-400"
+                      onChange={(event) => setEditingIconDraft(event.target.value.slice(0, 60))}
+                      className="w-40 rounded-full border border-transparent bg-white/80 px-3 py-1.5 text-right text-sm font-black text-slate-950 outline-none placeholder:text-slate-400"
                       placeholder="留空"
                       aria-label="分類符號"
                     />
                   </div>
 
-                  <div className="mt-2 max-h-28 overflow-y-auto pr-1">
-                    <div className="grid grid-cols-6 gap-2">
+                  <div className="mt-2 max-h-64 overflow-y-auto pr-1">
+                    <div className="grid grid-cols-5 gap-2">
                       {CATEGORY_ICON_CHOICES.map((choice) => (
                         <button
                           key={choice}
                           type="button"
                           onClick={() => setEditingIconDraft(choice)}
-                          className={`flex h-9 items-center justify-center rounded-[0.85rem] border text-[0.92rem] font-black transition ${
+                          className={`flex h-14 items-center justify-center rounded-[0.85rem] border transition ${
                             normalizeCategoryIcon(editingIconDraft) === choice
-                              ? 'border-slate-950 bg-slate-950 text-white'
-                              : 'border-[#e3e4e8] bg-[#f7f7f5] text-[#5e646d]'
+                              ? 'border-slate-950 bg-slate-100'
+                              : 'border-[#e3e4e8] bg-white'
                           }`}
                         >
-                          {choice}
+                          <CategoryIcon icon={choice} size={40} />
                         </button>
                       ))}
                     </div>
@@ -291,8 +301,8 @@ export function CategoryManager({ initialCategories }: Props) {
           </div>
         ) : (
           <div className="flex min-h-[4.35rem] items-center gap-3 px-4 py-3">
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[0.85rem] border border-[#e3e4e8] bg-[#f7f7f5] text-[0.82rem] font-black tracking-[-0.02em] text-[#5e646d]">
-              {getCategoryDisplayIcon(category)}
+            <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-[0.85rem] border border-[#e3e4e8] bg-[#f7f7f5]">
+              <CategoryIcon icon={getCategoryDisplayIcon(category)} size={36} />
             </div>
 
             <div className="min-w-0 flex-1">
@@ -308,6 +318,9 @@ export function CategoryManager({ initialCategories }: Props) {
                   type="button"
                   onClick={() => {
                     setAddingChildParentId(category.id)
+                    setEditingId(null)
+                    setEditingName('')
+                    setEditingIconDraft('')
                     setNotice(null)
                   }}
                   disabled={Boolean(pendingKey)}
@@ -446,11 +459,15 @@ export function CategoryManager({ initialCategories }: Props) {
                         [group.parent.id]: event.target.value,
                       }))
                     }
-                    onKeyDown={(event) =>
+                    onKeyDown={(event) => {
+                      if (event.key === 'Escape') {
+                        setAddingChildParentId(null)
+                        return
+                      }
                       handleEnter(event, () =>
                         handleCreate(childNames[group.parent.id] ?? '', group.parent.id),
                       )
-                    }
+                    }}
                     placeholder={`新增「${group.parent.name}」二級分類`}
                     className="min-w-0 flex-1 rounded-[1rem] border border-[#eadfce] bg-white px-3 py-2 text-sm font-black text-slate-950 outline-none placeholder:text-slate-400"
                     aria-label="新增二級分類"
