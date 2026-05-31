@@ -186,16 +186,18 @@ export function TransactionList({ transactions, accounts, currentAccountId, retu
                   className="group flex items-start gap-2.5 px-4 py-1.5 transition hover:bg-[#fafaf8] active:bg-[#f4f4f2]"
                   aria-label={`查看 ${getTransactionTitle(tx, accountNames)}`}
                 >
-                  <div
-                    className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[0.58rem] font-semibold leading-none tracking-[-0.02em] ${iconClass()}`}
-                    aria-hidden="true"
-                  >
-                    {tx.category ? (
-                      <CategoryIcon icon={getCategoryDisplayIcon(tx.category)} size={18} />
-                    ) : (
-                      getTransactionIcon(tx)
-                    )}
-                  </div>
+                  {tx.category ? (
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#fff5e9]" aria-hidden="true">
+                      <CategoryIcon icon={getCategoryDisplayIcon(tx.category)} size={34} />
+                    </div>
+                  ) : (
+                    <div
+                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[0.58rem] font-semibold leading-none tracking-[-0.02em] ${iconClass()}`}
+                      aria-hidden="true"
+                    >
+                      {getTransactionIcon(tx)}
+                    </div>
+                  )}
 
                   <div className="min-w-0 flex-1">
                     <div className="truncate text-[0.92rem] font-semibold leading-[1.1rem] text-[#202124]">
