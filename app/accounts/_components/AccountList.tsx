@@ -11,14 +11,17 @@ import type { FamilyAccount } from '@/lib/finance/types'
 import {
   accountGroupOrder,
   getAccountGroup,
+  getDisplayAccountBalance,
   isSharedAccount,
   normalizeOwner,
 } from '@/lib/finance/types'
 import { reorderAccounts } from '@/app/actions/accounts'
+import { convertToTwd, type TwdRateSnapshot } from '@/lib/exchange-rates'
 
 type Props = {
   accounts: FamilyAccount[]
   ledgerDeltas?: Record<string, number>
+  rateSnapshot?: TwdRateSnapshot
 }
 
 type Owner = 'Oscar' | 'Livia'
@@ -629,20 +632,43 @@ function AccountSortModal({
   )
 }
 
+function formatGroupTotalTwd(value: number) {
+  return `NT$${new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 0 }).format(value)}`
+}
+
 function AccountGroupSections({
   accounts,
+  totalAccounts,
   ledgerDeltas,
   emptyMessage,
   idPrefix,
   onLongPressBalance,
+  rateSnapshot,
 }: {
   accounts: FamilyAccount[]
+  totalAccounts?: FamilyAccount[]
   ledgerDeltas?: Record<string, number>
   emptyMessage: string
   idPrefix: string
   onLongPressBalance?: (account: FamilyAccount) => void
+  rateSnapshot?: TwdRateSnapshot
 }) {
   const groupedAccounts = buildGroupedItems(accounts, idPrefix)
+  const totalsByGroup = (() => {
+    if (!rateSnapshot) return null
+    const source = totalAccounts ?? accounts
+    const map = new Map<string, number>()
+    for (const account of source) {
+      const groupName = getAccountGroup(account)
+      const amount = convertToTwd(
+        getDisplayAccountBalance(account),
+        account.currency,
+        rateSnapshot,
+      )
+      map.set(groupName, (map.get(groupName) ?? 0) + amount)
+    }
+    return map
+  })()
 
   if (groupedAccounts.length === 0) {
     return <p className={emptyStateClass}>{emptyMessage}</p>
@@ -650,36 +676,55 @@ function AccountGroupSections({
 
   return (
     <div className="space-y-3">
-      {groupedAccounts.map(({ group, id, items }) => (
-        <section
-          key={group}
-          id={id}
-          className="scroll-mt-32 overflow-hidden rounded-[1.2rem] border border-[#ece4d8] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.04)]"
-        >
-          <div className="flex items-start justify-between gap-3 bg-[#fbfaf7] px-4 py-3">
-            <div className="min-w-0">
-              <h3 className="truncate text-[0.95rem] font-black text-slate-950">{group}</h3>
-              <p className="mt-0.5 text-[0.68rem] font-bold text-slate-400">{items.length} 個帳戶</p>
-            </div>
-          </div>
+      {groupedAccounts.map(({ group, id, items }) => {
+        const groupTotalTwd = totalsByGroup ? totalsByGroup.get(group) ?? 0 : null
 
-          <div className="divide-y divide-[#efebe4]">
-            {items.map((account) => (
-              <AccountCard
-                key={account.id}
-                account={account}
-                ledgerDelta={ledgerDeltas?.[account.id]}
-                onLongPressBalance={onLongPressBalance ? () => onLongPressBalance(account) : undefined}
-              />
-            ))}
-          </div>
-        </section>
-      ))}
+        return (
+          <section
+            key={group}
+            id={id}
+            className="scroll-mt-32 overflow-hidden rounded-[1.2rem] border border-[#ece4d8] bg-white shadow-[0_10px_24px_rgba(15,23,42,0.04)]"
+          >
+            <div className="flex items-start justify-between gap-3 bg-[#fbfaf7] px-4 py-3">
+              <div className="min-w-0">
+                <h3 className="truncate text-[0.95rem] font-black text-slate-950">{group}</h3>
+                <p className="mt-0.5 text-[0.68rem] font-bold text-slate-400">{items.length} 個帳戶</p>
+              </div>
+              {groupTotalTwd !== null ? (
+                <div className="shrink-0 text-right">
+                  <div
+                    className={`text-[0.95rem] font-black tabular-nums ${
+                      groupTotalTwd > 0
+                        ? 'text-[#2f7d3b]'
+                        : groupTotalTwd < 0
+                          ? 'text-[#c9563f]'
+                          : 'text-slate-950'
+                    }`}
+                  >
+                    {formatGroupTotalTwd(groupTotalTwd)}
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="divide-y divide-[#efebe4]">
+              {items.map((account) => (
+                <AccountCard
+                  key={account.id}
+                  account={account}
+                  ledgerDelta={ledgerDeltas?.[account.id]}
+                  onLongPressBalance={onLongPressBalance ? () => onLongPressBalance(account) : undefined}
+                />
+              ))}
+            </div>
+          </section>
+        )
+      })}
     </div>
   )
 }
 
-export function AccountList({ accounts, ledgerDeltas }: Props) {
+export function AccountList({ accounts, ledgerDeltas, rateSnapshot }: Props) {
   const router = useRouter()
   const ownerSwipeStartRef = useRef<{ pointerId: number; x: number; y: number } | null>(null)
   const suppressOwnerSwipeClickRef = useRef(false)
@@ -874,9 +919,11 @@ export function AccountList({ accounts, ledgerDeltas }: Props) {
           {regularAccounts.length > 0 ? (
             <AccountGroupSections
               accounts={regularAccounts}
+              totalAccounts={displayedAccounts}
               ledgerDeltas={ledgerDeltas}
               emptyMessage=""
               idPrefix="account-group"
+              rateSnapshot={rateSnapshot}
               onLongPressBalance={(account) =>
                 setAdjustingAccount({ account, ledgerDelta: ledgerDeltas?.[account.id] ?? 0 })
               }
