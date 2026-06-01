@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { useState } from 'react'
+import { useOptimistic, useState, useTransition } from 'react'
 import type { KeyboardEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import {
@@ -48,9 +48,28 @@ function BackIcon() {
   )
 }
 
+type CategoryOptimisticAction =
+  | { type: 'add'; category: FamilyCategory }
+  | { type: 'update'; category: FamilyCategory }
+  | { type: 'archive'; ids: Set<string> }
+
 export function CategoryManager({ initialCategories }: Props) {
   const router = useRouter()
   const [categories, setCategories] = useState(initialCategories)
+  const [, startTransition] = useTransition()
+  const [optimisticCategories, applyOptimisticCategories] = useOptimistic(
+    categories,
+    (current: FamilyCategory[], action: CategoryOptimisticAction): FamilyCategory[] => {
+      switch (action.type) {
+        case 'add':
+          return [...current, action.category]
+        case 'update':
+          return current.map((item) => (item.id === action.category.id ? action.category : item))
+        case 'archive':
+          return current.map((item) => (action.ids.has(item.id) ? { ...item, is_archived: true } : item))
+      }
+    },
+  )
   const [kind, setKind] = useState<TransactionKind>('expense')
   const [query, setQuery] = useState('')
   const [rootName, setRootName] = useState('')
@@ -59,10 +78,10 @@ export function CategoryManager({ initialCategories }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editingName, setEditingName] = useState('')
   const [editingIconDraft, setEditingIconDraft] = useState('')
-  const [pendingKey, setPendingKey] = useState<string | null>(null)
+  const pendingKey: string | null = null
   const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
 
-  const groups = buildCategoryPickerGroups(categories, kind)
+  const groups = buildCategoryPickerGroups(optimisticCategories, kind)
   const normalizedQuery = query.trim().toLocaleLowerCase('zh-TW')
   const filteredGroups = normalizedQuery
     ? groups
@@ -101,38 +120,44 @@ export function CategoryManager({ initialCategories }: Props) {
     router.refresh()
   }
 
-  async function handleCreate(name: string, parentId: string | null) {
+  function handleCreate(name: string, parentId: string | null) {
     const normalizedName = name.trim()
     if (!normalizedName) {
       setNotice({ tone: 'error', text: '分類名稱不能空白。' })
       return
     }
 
-    const key = parentId ? `create-child-${parentId}` : 'create-root'
-    setPendingKey(key)
+    const tempCategory: FamilyCategory = {
+      id: `temp-${crypto.randomUUID()}`,
+      name: normalizedName,
+      kind,
+      icon: null,
+      color: null,
+      parent_id: parentId,
+      sort_order: Number.MAX_SAFE_INTEGER,
+      is_archived: false,
+    }
+
+    if (parentId) {
+      setChildNames((current) => ({ ...current, [parentId]: '' }))
+      setAddingChildParentId(null)
+    } else {
+      setRootName('')
+    }
     setNotice(null)
 
-    try {
+    startTransition(async () => {
+      applyOptimisticCategories({ type: 'add', category: tempCategory })
       const result = await createCategory({ kind, name: normalizedName, parentId })
       if (!result.ok) {
         setNotice({ tone: 'error', text: result.error })
         return
       }
-
       upsertCategory(result.category)
-      if (parentId) {
-        setChildNames((current) => ({ ...current, [parentId]: '' }))
-        setAddingChildParentId(null)
-      } else {
-        setRootName('')
-      }
-      setNotice({ tone: 'success', text: '分類已新增。' })
-    } finally {
-      setPendingKey(null)
-    }
+    })
   }
 
-  async function handleSaveCategory() {
+  function handleSaveCategory() {
     if (!editingId) return
 
     const normalizedName = editingName.trim()
@@ -141,47 +166,54 @@ export function CategoryManager({ initialCategories }: Props) {
       return
     }
 
-    setPendingKey(`update-${editingId}`)
+    const editingTarget = categories.find((item) => item.id === editingId)
+    if (!editingTarget) return
+
+    const optimisticUpdated: FamilyCategory = {
+      ...editingTarget,
+      name: normalizedName,
+      icon: normalizeCategoryIcon(editingIconDraft) ?? editingTarget.icon,
+    }
+    const updateId = editingId
+    const updatedIcon = editingIconDraft
+
+    setEditingId(null)
+    setEditingName('')
+    setEditingIconDraft('')
     setNotice(null)
 
-    try {
-      const result = await updateCategory({ id: editingId, name: normalizedName, icon: editingIconDraft })
+    startTransition(async () => {
+      applyOptimisticCategories({ type: 'update', category: optimisticUpdated })
+      const result = await updateCategory({ id: updateId, name: normalizedName, icon: updatedIcon })
       if (!result.ok) {
         setNotice({ tone: 'error', text: result.error })
         return
       }
-
       upsertCategory(result.category)
-      setEditingId(null)
-      setEditingName('')
-      setEditingIconDraft('')
-      setNotice({ tone: 'success', text: '分類已更新。' })
-    } finally {
-      setPendingKey(null)
-    }
+    })
   }
 
-  async function handleArchive(category: FamilyCategory) {
+  function handleArchive(category: FamilyCategory) {
     const message = category.parent_id
       ? `封存「${category.name}」？`
       : `封存「${category.name}」與底下所有二級分類？`
     if (!window.confirm(message)) return
 
-    setPendingKey(`archive-${category.id}`)
+    const childIds = category.parent_id
+      ? []
+      : categories.filter((item) => item.parent_id === category.id).map((item) => item.id)
+    const optimisticIds = new Set<string>([category.id, ...childIds])
     setNotice(null)
 
-    try {
+    startTransition(async () => {
+      applyOptimisticCategories({ type: 'archive', ids: optimisticIds })
       const result = await archiveCategory(category.id)
       if (!result.ok) {
         setNotice({ tone: 'error', text: result.error })
         return
       }
-
       archiveCategories(result.archivedIds)
-      setNotice({ tone: 'success', text: '分類已封存。' })
-    } finally {
-      setPendingKey(null)
-    }
+    })
   }
 
   function startEditing(category: FamilyCategory) {
