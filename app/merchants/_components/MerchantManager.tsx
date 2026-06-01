@@ -2,6 +2,7 @@
 
 import { useMemo, useOptimistic, useRef, useState, useTransition } from 'react'
 import type { KeyboardEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import type { FamilyMerchant, FamilyMerchantGroup } from '@/lib/family-transactions'
 import {
@@ -31,6 +32,86 @@ function normalizeSearchText(value: string) {
 
 function handleLastUsedValue(merchant: FamilyMerchant) {
   return merchant.last_used_at ? merchant.last_used_at.slice(0, 10) : ''
+}
+
+function GroupPickerSheet({
+  open,
+  groupOptions,
+  value,
+  onChange,
+  onClose,
+}: {
+  open: boolean
+  groupOptions: Array<{ value: string; label: string }>
+  value: string
+  onChange: (value: string) => void
+  onClose: () => void
+}) {
+  if (typeof document === 'undefined') return null
+
+  function handlePick(nextValue: string) {
+    onChange(nextValue)
+    onClose()
+  }
+
+  return createPortal(
+    <div
+      className={`fixed inset-0 z-[80] transition ${open ? 'pointer-events-auto' : 'pointer-events-none'}`}
+      aria-hidden={!open}
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        className={`absolute inset-0 bg-[rgba(15,23,42,0.28)] transition ${open ? 'opacity-100' : 'opacity-0'}`}
+        aria-label="關閉分類選擇"
+      />
+      <div
+        className={`absolute inset-x-0 bottom-0 z-10 transition-transform duration-300 ${
+          open ? 'translate-y-0' : 'translate-y-full'
+        }`}
+      >
+        <div className="mx-auto w-full max-w-md rounded-t-[2.2rem] bg-[#faf7f0] px-4 pb-[calc(1.25rem+env(safe-area-inset-bottom))] pt-3 shadow-[0_-24px_60px_rgba(15,23,42,0.2)]">
+          <div className="relative flex items-center justify-between">
+            <div className="h-9 w-9" />
+            <div className="absolute left-1/2 top-1/2 h-1.5 w-14 -translate-x-1/2 -translate-y-1/2 rounded-full bg-slate-200" />
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-full bg-white px-4 py-2 text-sm font-black text-slate-500 shadow-[0_10px_20px_rgba(15,23,42,0.08)]"
+            >
+              完成
+            </button>
+          </div>
+          <div className="mt-3 px-1 py-2 text-[13px] font-bold text-slate-400">選擇分類</div>
+          <div
+            className="overflow-y-auto rounded-[1.6rem] bg-white p-3 shadow-[0_16px_34px_rgba(15,23,42,0.08)]"
+            style={{ maxHeight: '60vh' }}
+          >
+            <div className="grid grid-cols-4 gap-1">
+              {groupOptions.map((option) => {
+                const isSelected = option.value === value
+                return (
+                  <button
+                    key={option.value || '__empty'}
+                    type="button"
+                    onClick={() => handlePick(option.value)}
+                    className={`flex min-h-[3.6rem] items-center justify-center rounded-[1rem] px-1 py-2 transition ${
+                      isSelected ? 'bg-[#fff1e3]' : 'active:bg-slate-50'
+                    }`}
+                  >
+                    <span className="line-clamp-2 text-center text-[12px] font-bold text-slate-700">
+                      {option.label}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
 }
 
 type GroupOptimisticAction =
@@ -86,6 +167,8 @@ export function MerchantManager({ initialMerchants, initialGroups }: Props) {
   const [editingMerchantName, setEditingMerchantName] = useState('')
   const pendingKey: string | null = null
   const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
+  const [merchantGroupPickerFor, setMerchantGroupPickerFor] = useState<string | null>(null)
+  const [isNewMerchantGroupPickerOpen, setIsNewMerchantGroupPickerOpen] = useState(false)
 
   const normalizedQuery = normalizeSearchText(query)
   const groupOptions = [
@@ -378,7 +461,7 @@ export function MerchantManager({ initialMerchants, initialGroups }: Props) {
     const target = merchants.find((item) => item.id === merchantId)
     if (!target) return
 
-    const resolvedGroupId = nextGroupId === '__unassigned__' ? null : nextGroupId
+    const resolvedGroupId = nextGroupId === '' || nextGroupId === '__unassigned__' ? null : nextGroupId
     const optimisticUpdated: FamilyMerchant = { ...target, group_id: resolvedGroupId }
     setNotice(null)
 
@@ -445,19 +528,16 @@ export function MerchantManager({ initialMerchants, initialGroups }: Props) {
         </div>
 
         <div className="mt-3 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
-          <select
-            value={merchant.group_id ?? '__unassigned__'}
-            onChange={(event) => handleMerchantGroupChange(merchant.id, event.target.value)}
+          <button
+            type="button"
+            onClick={() => setMerchantGroupPickerFor(merchant.id)}
             disabled={pendingKey === `merchant-${merchant.id}` || Boolean(pendingKey)}
-            className="min-w-0 rounded-[0.95rem] border border-[#e7dccb] bg-white px-3 py-2.5 text-sm font-black text-slate-700 outline-none disabled:opacity-50"
+            className="flex min-w-0 items-center justify-between gap-2 rounded-[0.95rem] border border-[#e7dccb] bg-white px-3 py-2.5 text-sm font-black text-slate-700 outline-none disabled:opacity-50"
             aria-label={`設定 ${merchant.name} 的商家分類`}
           >
-            {groupOptions.map((option) => (
-              <option key={option.value || '__empty'} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+            <span className="truncate">{merchantGroupName}</span>
+            <span className="shrink-0 text-base text-slate-400">›</span>
+          </button>
 
           {isEditing ? (
             <div className="flex shrink-0 items-center gap-1.5">
@@ -704,18 +784,17 @@ export function MerchantManager({ initialMerchants, initialGroups }: Props) {
                 aria-label="新增商家名稱"
               />
               <div className="flex items-center gap-2">
-                <select
-                  value={newMerchantGroupId}
-                  onChange={(event) => setNewMerchantGroupId(event.target.value)}
-                  className="min-w-0 flex-1 rounded-[1rem] border border-[#eadfce] bg-[#fcfbf8] px-3 py-3 text-sm font-black text-slate-700 outline-none"
+                <button
+                  type="button"
+                  onClick={() => setIsNewMerchantGroupPickerOpen(true)}
+                  className="flex min-w-0 flex-1 items-center justify-between gap-2 rounded-[1rem] border border-[#eadfce] bg-[#fcfbf8] px-3 py-3 text-sm font-black text-slate-700 outline-none"
                   aria-label="新增商家分類"
                 >
-                  {groupOptions.map((option) => (
-                    <option key={option.value || '__empty'} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+                  <span className="truncate">
+                    {groupOptions.find((option) => option.value === newMerchantGroupId)?.label ?? '未分類'}
+                  </span>
+                  <span className="shrink-0 text-base text-slate-400">›</span>
+                </button>
                 <button
                   type="button"
                   onClick={handleCreateMerchant}
@@ -864,6 +943,30 @@ export function MerchantManager({ initialMerchants, initialGroups }: Props) {
           </div>
         )}
       </div>
+
+      <GroupPickerSheet
+        open={merchantGroupPickerFor !== null}
+        groupOptions={groupOptions}
+        value={
+          merchantGroupPickerFor
+            ? optimisticMerchants.find((m) => m.id === merchantGroupPickerFor)?.group_id ?? ''
+            : ''
+        }
+        onChange={(nextValue) => {
+          if (merchantGroupPickerFor) {
+            handleMerchantGroupChange(merchantGroupPickerFor, nextValue)
+          }
+        }}
+        onClose={() => setMerchantGroupPickerFor(null)}
+      />
+
+      <GroupPickerSheet
+        open={isNewMerchantGroupPickerOpen}
+        groupOptions={groupOptions}
+        value={newMerchantGroupId}
+        onChange={(nextValue) => setNewMerchantGroupId(nextValue)}
+        onClose={() => setIsNewMerchantGroupPickerOpen(false)}
+      />
     </div>
   )
 }
