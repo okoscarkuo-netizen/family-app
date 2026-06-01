@@ -9,6 +9,9 @@ import { AccountMonthNav } from '../_components/AccountMonthNav'
 import { AccountEditButton } from '../_components/AccountEditButton'
 import { AccountOpeningBalanceAdjuster } from '../_components/AccountOpeningBalanceAdjuster'
 
+const DEFAULT_VISIBLE_TRANSACTIONS = 120
+const VISIBLE_TRANSACTION_STEP = 120
+
 function ownerLabel(owner: string | null | undefined): string {
   const normalized = normalizeOwner(owner)
   if (normalized === 'Oscar') return '老公'
@@ -57,11 +60,9 @@ function formatPeriodLabel(view: AccountView, year: number, month: number) {
   return `${year} 年 ${month} 月`
 }
 
-
-
 type PageProps = {
   params: Promise<{ id: string }>
-  searchParams: Promise<{ view?: string; year?: string; month?: string }>
+  searchParams: Promise<{ view?: string; year?: string; month?: string; take?: string }>
 }
 
 export default async function AccountDetailPage({ params, searchParams }: PageProps) {
@@ -73,6 +74,7 @@ export default async function AccountDetailPage({ params, searchParams }: PagePr
   const view = parseAccountView(query.view)
   const year = parseYear(query.year, now.getFullYear())
   const month = parseMonth(query.month, now.getMonth() + 1)
+  const visibleLimit = parseVisibleLimit(query.take)
 
   const transactionParams =
     view === 'all'
@@ -89,6 +91,11 @@ export default async function AccountDetailPage({ params, searchParams }: PagePr
 
   const ledgerAccounts = allAccounts.map((a) => ({ id: a.id, name: a.name }))
   const periodLabel = formatPeriodLabel(view, year, month)
+  const visibleTransactions = transactions.slice(0, visibleLimit)
+  const hasMoreTransactions = visibleTransactions.length < transactions.length
+  const loadMoreHref = hasMoreTransactions
+    ? buildAccountLoadMoreHref(account.id, query, Math.min(transactions.length, visibleLimit + VISIBLE_TRANSACTION_STEP))
+    : undefined
 
   return (
     <>
@@ -158,10 +165,12 @@ export default async function AccountDetailPage({ params, searchParams }: PagePr
 
           <div className="mt-2">
             <TransactionList
-              transactions={transactions}
+              transactions={visibleTransactions}
               accounts={ledgerAccounts}
               currentAccountId={account.id}
               returnUrl={`/accounts/${encodeURIComponent(account.id)}`}
+              totalCount={transactions.length}
+              loadMoreHref={loadMoreHref}
             />
           </div>
         </section>
@@ -169,4 +178,24 @@ export default async function AccountDetailPage({ params, searchParams }: PagePr
       <BottomNav />
     </>
   )
+}
+
+function parseVisibleLimit(value: string | undefined) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return DEFAULT_VISIBLE_TRANSACTIONS
+  return Math.max(DEFAULT_VISIBLE_TRANSACTIONS, Math.floor(parsed))
+}
+
+function buildAccountLoadMoreHref(
+  accountId: string,
+  params: Awaited<PageProps['searchParams']>,
+  take: number,
+) {
+  const next = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (key === 'take') continue
+    if (value) next.set(key, value)
+  }
+  next.set('take', String(take))
+  return `/accounts/${encodeURIComponent(accountId)}?${next.toString()}`
 }

@@ -3,8 +3,10 @@ import { AccountList } from './_components/AccountList'
 import { BottomNav } from '@/components/BottomNav'
 
 export default async function AccountsPage() {
-  const accounts = await getAccounts()
-  const ledgerDeltas = await getAllAccountLedgerDeltas()
+  const [accounts, ledgerDeltas] = await Promise.all([
+    getAccounts(),
+    getAllAccountLedgerDeltas(),
+  ])
 
   return (
     <main className="min-h-screen bg-[#f6f7fb] text-slate-950">

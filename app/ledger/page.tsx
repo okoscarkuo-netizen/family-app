@@ -11,6 +11,9 @@ import {
 } from '@/app/ledger/_lib/period'
 import type { FamilyAccount } from '@/lib/finance/types'
 
+const DEFAULT_VISIBLE_TRANSACTIONS = 120
+const VISIBLE_TRANSACTION_STEP = 120
+
 async function getActiveAccounts(): Promise<Pick<FamilyAccount, 'id' | 'name' | 'hidden'>[]> {
   const supabase = createAdminClient()
   if (!supabase) return []
@@ -23,7 +26,7 @@ async function getActiveAccounts(): Promise<Pick<FamilyAccount, 'id' | 'name' | 
 }
 
 type PageProps = {
-  searchParams: Promise<{ view?: string; date?: string; year?: string; month?: string; accountId?: string; q?: string }>
+  searchParams: Promise<{ view?: string; date?: string; year?: string; month?: string; accountId?: string; q?: string; take?: string }>
 }
 
 export default async function LedgerPage({ searchParams }: PageProps) {
@@ -41,6 +44,7 @@ export default async function LedgerPage({ searchParams }: PageProps) {
   const isSearchMode = params.q !== undefined
   const queryRaw = params.q ?? ''
   const queryTrimmed = queryRaw.trim()
+  const visibleLimit = parseVisibleLimit(params.take)
 
   const [transactions, allAccounts] = await Promise.all([
     getTransactions({
@@ -55,6 +59,11 @@ export default async function LedgerPage({ searchParams }: PageProps) {
   const selectedAccount = allAccounts.find((account) => account.id === accountId)
   const accountLabel = selectedAccount?.name ?? '全部帳戶'
   const recordLabel = `${transactions.length.toLocaleString('zh-TW')} 筆`
+  const visibleTransactions = transactions.slice(0, visibleLimit)
+  const hasMoreTransactions = visibleTransactions.length < transactions.length
+  const loadMoreHref = hasMoreTransactions
+    ? buildLedgerLoadMoreHref(params, Math.min(transactions.length, visibleLimit + VISIBLE_TRANSACTION_STEP))
+    : undefined
   const periodTitle = formatLedgerTitle(view, anchorDate)
   const summary = transactions.reduce(
     (acc, transaction) => {
@@ -81,12 +90,37 @@ export default async function LedgerPage({ searchParams }: PageProps) {
         currentAccountId={accountId}
       >
         <div className="flex-1 overflow-y-auto">
-          <TransactionList transactions={transactions} accounts={allAccounts} currentAccountId={accountId} />
+          <TransactionList
+            transactions={visibleTransactions}
+            accounts={allAccounts}
+            currentAccountId={accountId}
+            totalCount={transactions.length}
+            loadMoreHref={loadMoreHref}
+          />
         </div>
       </LedgerViewport>
       <BottomNav />
     </>
   )
+}
+
+function parseVisibleLimit(value: string | undefined) {
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) return DEFAULT_VISIBLE_TRANSACTIONS
+  return Math.max(DEFAULT_VISIBLE_TRANSACTIONS, Math.floor(parsed))
+}
+
+function buildLedgerLoadMoreHref(
+  params: Awaited<PageProps['searchParams']>,
+  take: number,
+) {
+  const next = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (key === 'take') continue
+    if (value) next.set(key, value)
+  }
+  next.set('take', String(take))
+  return `/ledger?${next.toString()}`
 }
 
 function formatDate(date: Date) {

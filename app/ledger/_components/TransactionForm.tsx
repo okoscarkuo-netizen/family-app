@@ -2065,6 +2065,10 @@ export function TransactionForm({
   const router = useRouter()
   const [kind, setKind] = useState<Kind>(initialKind)
   const [pending, setPending] = useState(false)
+  const submittingRef = useRef(false)
+  const submittedRef = useRef(false)
+  const prevAmountRef = useRef('')
+  const prevReminderTitleRef = useRef('')
   const [amount, setAmount] = useState(isEditMode ? String(Number(transaction.amount)) : '')
   const [transferTargetAmount, setTransferTargetAmount] = useState(
     isEditMode && initialKind === 'transfer'
@@ -2226,6 +2230,16 @@ export function TransactionForm({
 
 
   useEffect(() => {
+    const amountFresh = prevAmountRef.current === '' && amount !== ''
+    const reminderFresh = prevReminderTitleRef.current === '' && reminderTitle !== ''
+    if (amountFresh || reminderFresh) {
+      submittedRef.current = false
+    }
+    prevAmountRef.current = amount
+    prevReminderTitleRef.current = reminderTitle
+  }, [amount, reminderTitle])
+
+  useEffect(() => {
     if (!isCategoryPickerOpen && !isMerchantPickerOpen && !isMerchantManagerOpen) return
 
     const previousOverflow = document.body.style.overflow
@@ -2237,7 +2251,11 @@ export function TransactionForm({
   }, [isCategoryPickerOpen, isMerchantPickerOpen, isMerchantManagerOpen])
 
   async function handleSubmit(formData: FormData) {
+    if (submittingRef.current) return
+    if (submittedRef.current) return
     if (!canSubmit) return
+    submittingRef.current = true
+    let keepPendingAfterSubmit = false
 
     const submitMode = !isEditMode && formData.get('submitMode') === 'stay' ? 'stay' : 'ledger'
     const transferTargetAmount =
@@ -2314,6 +2332,7 @@ export function TransactionForm({
         setMessage({ tone: 'error', text: result.error })
         return
       }
+      submittedRef.current = true
 
       if (!isEditMode && recurringOn && kind !== 'reminder' && resolvedCategoryId && resolvedAccountId) {
         const startDate = occurredAt.slice(0, 10)
@@ -2347,7 +2366,6 @@ export function TransactionForm({
           setReminderDueOn(currentLocalDateValue())
         }
         setMessage({ tone: 'success', text: '提醒已儲存。' })
-        router.refresh()
         return
       }
 
@@ -2360,10 +2378,10 @@ export function TransactionForm({
         setOccurredAt(currentLocalDateTimeValue())
         setIsKeypadVisible(true)
         setMessage({ tone: 'success', text: '已儲存，可以繼續記下一筆。' })
-        router.refresh()
         return
       }
 
+      keepPendingAfterSubmit = true
       router.push(returnUrl ?? ledgerHrefForOccurredAt(occurredAt))
     } catch (error) {
       setMessage({
@@ -2371,18 +2389,27 @@ export function TransactionForm({
         text: error instanceof Error ? error.message : `${isEditMode ? '更新' : '新增'}失敗，請稍後再試。`,
       })
     } finally {
-      setPending(false)
+      submittingRef.current = false
+      if (!keepPendingAfterSubmit) {
+        setPending(false)
+      }
     }
   }
 
   async function handleDelete() {
     if (!isEditMode) return
+    if (submittingRef.current) return
+    if (submittedRef.current) return
     if (!window.confirm('確定要刪除這筆交易嗎？帳戶餘額也會一起沖回。')) return
 
+    submittingRef.current = true
+    let keepPendingAfterDelete = false
     setPending(true)
     setMessage(null)
     try {
       await deleteTransaction(transaction.id)
+      submittedRef.current = true
+      keepPendingAfterDelete = true
       router.push(returnUrl ?? ledgerHrefForOccurredAt(occurredAt))
     } catch (error) {
       setMessage({
@@ -2390,7 +2417,10 @@ export function TransactionForm({
         text: error instanceof Error ? error.message : '刪除失敗，請稍後再試。',
       })
     } finally {
-      setPending(false)
+      submittingRef.current = false
+      if (!keepPendingAfterDelete) {
+        setPending(false)
+      }
     }
   }
 

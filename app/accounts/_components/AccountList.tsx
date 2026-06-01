@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState, useTransition } from 'react'
+import { useDeferredValue, useMemo, useRef, useState, useTransition } from 'react'
 import { createPortal } from 'react-dom'
 import type { MouseEvent, PointerEvent } from 'react'
 import { useRouter } from 'next/navigation'
@@ -145,10 +145,8 @@ function normalizeSearchText(value: unknown): string {
   return String(value ?? '').trim().toLowerCase()
 }
 
-function matchesAccount(account: FamilyAccount, query: string): boolean {
-  if (!query) return true
-
-  const searchable = [
+function buildAccountSearchText(account: FamilyAccount): string {
+  return [
     account.name,
     account.type,
     account.owner,
@@ -160,8 +158,12 @@ function matchesAccount(account: FamilyAccount, query: string): boolean {
   ]
     .map(normalizeSearchText)
     .join(' ')
+}
 
-  return searchable.includes(query)
+function matchesAccountSearchText(searchText: string | undefined, query: string): boolean {
+  if (!query) return true
+
+  return Boolean(searchText?.includes(query))
 }
 
 function ownerDisplayLabel(owner: Owner) {
@@ -688,11 +690,15 @@ export function AccountList({ accounts, ledgerDeltas }: Props) {
   const [showHiddenAccounts, setShowHiddenAccounts] = useState(false)
   const [isToolsMenuOpen, setIsToolsMenuOpen] = useState(false)
   const [isSortModalOpen, setIsSortModalOpen] = useState(false)
-
-
-  const normalizedQuery = normalizeSearchText(query)
+  const [, startOwnerTransition] = useTransition()
+  const deferredQuery = useDeferredValue(query)
+  const normalizedQuery = normalizeSearchText(deferredQuery)
   const visibleAccounts = useMemo(() => accounts.filter((account) => !account.hidden), [accounts])
   const hiddenAccounts = useMemo(() => accounts.filter((account) => account.hidden), [accounts])
+  const accountSearchTextById = useMemo(
+    () => new Map(accounts.map((account) => [account.id, buildAccountSearchText(account)])),
+    [accounts],
+  )
   const activeOwnerAccounts = useMemo(
     () => getOwnerAccounts(accounts, activeOwner),
     [accounts, activeOwner],
@@ -702,8 +708,10 @@ export function AccountList({ accounts, ledgerDeltas }: Props) {
     [activeOwnerAccounts],
   )
   const activeOwnerMatchedAccounts = useMemo(
-    () => activeOwnerAccounts.filter((account) => matchesAccount(account, normalizedQuery)),
-    [activeOwnerAccounts, normalizedQuery],
+    () => activeOwnerAccounts.filter((account) => (
+      matchesAccountSearchText(accountSearchTextById.get(account.id), normalizedQuery)
+    )),
+    [accountSearchTextById, activeOwnerAccounts, normalizedQuery],
   )
   const activeOwnerVisibleMatchedAccounts = useMemo(
     () => activeOwnerMatchedAccounts.filter((account) => !account.hidden),
@@ -736,6 +744,14 @@ export function AccountList({ accounts, ledgerDeltas }: Props) {
     () => activeOwnerAccounts.length,
     [activeOwnerAccounts],
   )
+
+  function changeOwner(owner: Owner) {
+    if (owner === activeOwner) return
+    setIsToolsMenuOpen(false)
+    startOwnerTransition(() => {
+      setActiveOwner(owner)
+    })
+  }
 
   function openCreate() {
     setIsToolsMenuOpen(false)
@@ -785,7 +801,7 @@ export function AccountList({ accounts, ledgerDeltas }: Props) {
     if (nextOwner === activeOwner) return
 
     suppressOwnerSwipeClickRef.current = true
-    setActiveOwner(nextOwner)
+    changeOwner(nextOwner)
   }
 
   function handleOwnerSwipeClickCapture(event: MouseEvent<HTMLDivElement>) {
@@ -818,10 +834,7 @@ export function AccountList({ accounts, ledgerDeltas }: Props) {
         <OwnerTopTabs
           activeOwner={activeOwner}
           visibleCounts={countsByOwner}
-          onChange={(owner) => {
-            setIsToolsMenuOpen(false)
-            setActiveOwner(owner)
-          }}
+          onChange={changeOwner}
         />
 
         <div className="mt-3">

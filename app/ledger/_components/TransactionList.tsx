@@ -47,8 +47,12 @@ function formatTransferMoney(value: number, currency: string): string {
 function groupByDate(transactions: FamilyTransaction[]): Array<{ date: string; items: FamilyTransaction[] }> {
   const map = new Map<string, FamilyTransaction[]>()
   for (const tx of transactions) {
-    const existing = map.get(tx.occurred_on) ?? []
-    map.set(tx.occurred_on, [...existing, tx])
+    const existing = map.get(tx.occurred_on)
+    if (existing) {
+      existing.push(tx)
+    } else {
+      map.set(tx.occurred_on, [tx])
+    }
   }
   return Array.from(map.entries()).map(([date, items]) => ({ date, items }))
 }
@@ -154,9 +158,18 @@ type Props = {
   accounts: LedgerAccount[]
   currentAccountId?: string
   returnUrl?: string
+  totalCount?: number
+  loadMoreHref?: string
 }
 
-export function TransactionList({ transactions, accounts, currentAccountId, returnUrl }: Props) {
+export function TransactionList({
+  transactions,
+  accounts,
+  currentAccountId,
+  returnUrl,
+  totalCount,
+  loadMoreHref,
+}: Props) {
   if (transactions.length === 0) {
     return (
       <div className={`${softSurfaceClass} border-dashed text-center text-sm font-black text-slate-500`}>
@@ -167,6 +180,7 @@ export function TransactionList({ transactions, accounts, currentAccountId, retu
 
   const groups = groupByDate(transactions)
   const accountNames = new Map(accounts.map((account) => [account.id, account.name]))
+  const hasMore = Boolean(totalCount && totalCount > transactions.length)
 
   return (
     <div>
@@ -248,6 +262,17 @@ export function TransactionList({ transactions, accounts, currentAccountId, retu
           </div>
         </section>
       ))}
+      {hasMore && loadMoreHref ? (
+        <div className="border-t-2 border-[#f4f4f2] bg-white px-4 py-4">
+          <Link
+            href={loadMoreHref}
+            scroll={false}
+            className="flex min-h-11 items-center justify-center rounded-full border border-[#e9e9e6] bg-[#fafaf8] px-4 text-[0.82rem] font-black text-[#5f6368] transition active:scale-[0.99] active:bg-[#f4f4f2]"
+          >
+            顯示更多，已顯示 {transactions.length.toLocaleString('zh-TW')} / {totalCount?.toLocaleString('zh-TW')} 筆
+          </Link>
+        </div>
+      ) : null}
     </div>
   )
 }
