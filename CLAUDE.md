@@ -82,6 +82,22 @@
 
 ---
 
+### 🔴 雷 8：production 跟 main 不同步，從 main 部會「倒退」
+
+**症狀**：把一個小 fix push 到 main，Vercel 自動 deploy 完後，production 上**很多功能消失**（例如新版鍵盤、週期 chip 等）。使用者問「為什麼之前的功能不見了」。
+
+**原因**：使用者習慣從本地 feature 分支用 `npx vercel deploy --prod` 直接推 production。所以 production 一直跑的是 feat 分支的程式碼，**main 落後 20+ 個 commits**。一旦有人 push main 並讓 Vercel 自動 build main，production alias 會被改指向 main 的 build，導致 feat 才有的功能全消失。
+
+**正確做法（AI 部署前必做的檢查）**：
+1. 部署前先跑 `git log main..HEAD --oneline` 看當前分支領先 main 幾個 commits
+2. 如果領先 > 0，提醒使用者：「main 路線會讓那些 commits 暫時從 production 消失」
+3. 預設用 `npx vercel deploy --prod`（從當前分支部），**不要**直接 push main 期待 Vercel 自動部 production，除非當前分支 = main 或當前分支已經 merge 進 main
+4. 長期解法：定期把 feat 分支 merge 回 main，讓兩邊收斂
+
+**事件記錄**：2026-05-31 修「連點兩下重複記帳」bug 時踩到。後來重新從 feat 分支 `vercel --prod` 恢復。
+
+---
+
 ### 🟡 雷 5：跨幣別直接加總是錯的
 
 **正確做法**：所有跨幣別加總一定要先用 `convertToTwd()` 換算成 TWD 再加。
