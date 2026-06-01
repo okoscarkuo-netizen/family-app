@@ -1,7 +1,7 @@
 'use client'
 
 import { useRouter, useSearchParams } from 'next/navigation'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useTransition } from 'react'
 import { createPortal } from 'react-dom'
 import type { ReactNode, PointerEvent as ReactPointerEvent, TouchEvent as ReactTouchEvent } from 'react'
 import { HomeSyncButton } from '@/app/_components/HomeSyncButton'
@@ -24,6 +24,8 @@ type Props = {
   currentAccountId?: string
   children: ReactNode
 }
+
+type PendingIntent = 'prev' | 'next' | 'view' | 'current' | 'search' | null
 
 const VIEW_LABELS: Record<LedgerView, string> = {
   year: '年',
@@ -98,20 +100,30 @@ export function LedgerViewport({
   const router = useRouter()
   const searchParams = useSearchParams()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [pendingIntent, setPendingIntent] = useState<PendingIntent>(null)
+  const [isPending, startTransition] = useTransition()
   const swipeRef = useRef<{ x: number; y: number; active: boolean; startedOnInteractive: boolean } | null>(null)
   const touchRef = useRef<{ x: number; y: number; active: boolean; startedOnInteractive: boolean } | null>(null)
   const anchor = new Date(`${anchorDate}T12:00:00`)
-  const canNavigate = !isSearchMode
+  const isNavigating = isPending && pendingIntent !== null
+  const canNavigate = !isSearchMode && !isNavigating
   const netTone = netAmount > 0 ? 'text-[#d66f67]' : netAmount < 0 ? 'text-[#22a884]' : 'text-[#5f6368]'
   const netLabel = `${netAmount > 0 ? '+' : netAmount < 0 ? '-' : ''}${formatCurrency(netAmount)}`
   const subtitle = isSearchMode
     ? (queryRaw.trim() ? `關鍵字「${queryRaw.trim()}」 · ${recordLabel}` : `搜尋結果 · ${recordLabel}`)
     : `${accountLabel} · ${recordLabel}`
 
+  function pushLedgerUrl(url: string, intent: PendingIntent) {
+    setPendingIntent(intent)
+    startTransition(() => {
+      router.push(url)
+    })
+  }
+
   function navigate(delta: number) {
     if (!canNavigate) return
     const nextDate = shiftLedgerDate(view, anchor, delta)
-    router.push(buildLedgerUrl(searchParams, view, nextDate))
+    pushLedgerUrl(buildLedgerUrl(searchParams, view, nextDate), delta < 0 ? 'prev' : 'next')
   }
 
   function setView(nextView: LedgerView) {
@@ -120,7 +132,7 @@ export function LedgerViewport({
     next.set('view', nextView)
     next.set('date', formatDateKey(anchor))
     setMenuOpen(false)
-    router.push(`/ledger?${next.toString()}`)
+    pushLedgerUrl(`/ledger?${next.toString()}`, 'view')
   }
 
   function goToCurrentPeriod() {
@@ -130,14 +142,14 @@ export function LedgerViewport({
     next.set('view', view)
     next.set('date', formatDateKey(now))
     setMenuOpen(false)
-    router.push(`/ledger?${next.toString()}`)
+    pushLedgerUrl(`/ledger?${next.toString()}`, 'current')
   }
 
   function goToSearch() {
     const next = new URLSearchParams(searchParams.toString())
     next.set('q', queryRaw)
     setMenuOpen(false)
-    router.push(`/ledger?${next.toString()}`)
+    pushLedgerUrl(`/ledger?${next.toString()}`, 'search')
   }
 
   function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
@@ -225,6 +237,12 @@ export function LedgerViewport({
       >
         <header className="border-b border-[#eeeeec] bg-[#f6f4ef] px-4 pb-2 pt-[calc(0.35rem+env(safe-area-inset-top))] text-[#1f2328]">
           <div className="relative overflow-hidden rounded-[1.8rem] border border-[#ebe4d7] bg-[linear-gradient(180deg,#fffdf8_0%,#fbf7ef_100%)] px-3 py-2.5 shadow-[0_16px_44px_rgba(15,23,42,0.10)]">
+            <div
+              aria-hidden="true"
+              className={`absolute left-0 top-0 h-0.5 bg-[#e4c44a] transition-all duration-300 ${
+                isNavigating ? 'w-full opacity-100' : 'w-0 opacity-0'
+              }`}
+            />
             <div aria-hidden="true" className="pointer-events-none absolute inset-0">
               <div className="absolute -right-9 -top-8 h-28 w-28 rounded-full bg-[radial-gradient(circle,rgba(120,189,171,0.22)_0%,transparent_72%)]" />
               <div className="absolute -bottom-14 -left-8 h-32 w-32 rounded-full bg-[radial-gradient(circle,rgba(230,193,145,0.20)_0%,transparent_70%)]" />
@@ -260,7 +278,9 @@ export function LedgerViewport({
                 onClick={() => navigate(-1)}
                 aria-label="上一個期間"
                 disabled={!canNavigate}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#ece6db] bg-white/70 text-[#6f747a] transition hover:bg-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-35"
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#ece6db] bg-white/70 text-[#6f747a] transition hover:bg-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-35 ${
+                  isNavigating && pendingIntent === 'prev' ? 'scale-95 bg-white text-[#202124] ring-2 ring-[#e4c44a]/40' : ''
+                }`}
               >
                 <ChevronIcon direction="left" />
               </button>
@@ -277,7 +297,9 @@ export function LedgerViewport({
                 onClick={() => navigate(1)}
                 aria-label="下一個期間"
                 disabled={!canNavigate}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#ece6db] bg-white/70 text-[#6f747a] transition hover:bg-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-35"
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-[#ece6db] bg-white/70 text-[#6f747a] transition hover:bg-white active:scale-95 disabled:cursor-not-allowed disabled:opacity-35 ${
+                  isNavigating && pendingIntent === 'next' ? 'scale-95 bg-white text-[#202124] ring-2 ring-[#e4c44a]/40' : ''
+                }`}
               >
                 <ChevronIcon direction="right" />
               </button>
@@ -327,6 +349,7 @@ export function LedgerViewport({
                         key={item}
                         type="button"
                         onClick={() => setView(item)}
+                        disabled={isNavigating}
                         className={`flex w-full items-center justify-between rounded-[1.1rem] border px-3 py-3 text-left transition active:scale-[0.99] ${
                           active
                             ? 'border-[#202124] bg-[#202124] text-white'
@@ -346,14 +369,16 @@ export function LedgerViewport({
                   <button
                     type="button"
                     onClick={goToCurrentPeriod}
-                    className="rounded-[1.1rem] border border-[#ece8e1] bg-white px-3 py-3 text-left text-sm font-semibold text-[#202124] transition hover:border-[#d6cec0] hover:bg-[#f8f5ef]"
+                    disabled={isNavigating}
+                    className="rounded-[1.1rem] border border-[#ece8e1] bg-white px-3 py-3 text-left text-sm font-semibold text-[#202124] transition hover:border-[#d6cec0] hover:bg-[#f8f5ef] disabled:opacity-50"
                   >
                     回到目前
                   </button>
                   <button
                     type="button"
                     onClick={goToSearch}
-                    className="rounded-[1.1rem] border border-[#ece8e1] bg-white px-3 py-3 text-left text-sm font-semibold text-[#202124] transition hover:border-[#d6cec0] hover:bg-[#f8f5ef]"
+                    disabled={isNavigating}
+                    className="rounded-[1.1rem] border border-[#ece8e1] bg-white px-3 py-3 text-left text-sm font-semibold text-[#202124] transition hover:border-[#d6cec0] hover:bg-[#f8f5ef] disabled:opacity-50"
                   >
                     搜尋交易
                   </button>

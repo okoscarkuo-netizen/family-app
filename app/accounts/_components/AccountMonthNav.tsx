@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useTransition } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter, useSearchParams } from 'next/navigation'
 
@@ -12,6 +12,8 @@ type Props = {
   year: number
   month: number
 }
+
+type PendingIntent = 'prev' | 'next' | 'current' | 'view' | null
 
 function FilterIcon() {
   return (
@@ -71,21 +73,27 @@ export function AccountMonthNav({ accountId, view, year, month }: Props) {
   const searchParams = useSearchParams()
   const now = new Date()
   const [menuOpen, setMenuOpen] = useState(false)
-  const canNavigate = view !== 'all'
+  const [pendingIntent, setPendingIntent] = useState<PendingIntent>(null)
+  const [isPending, startTransition] = useTransition()
+  const isNavigating = isPending && pendingIntent !== null
+  const canNavigate = view !== 'all' && !isNavigating
   const isCurrentYear = view === 'year' && year === now.getFullYear()
   const isCurrentMonth = view === 'month' && year === now.getFullYear() && month === now.getMonth() + 1
   const title = titleForView(view, year, month)
 
-  function pushView(nextView: AccountView, nextYear = year, nextMonth = month) {
+  function pushView(nextView: AccountView, nextYear = year, nextMonth = month, intent: PendingIntent = 'view') {
     setMenuOpen(false)
-    router.push(buildAccountUrl(accountId, searchParams, nextView, nextYear, nextMonth))
+    setPendingIntent(intent)
+    startTransition(() => {
+      router.push(buildAccountUrl(accountId, searchParams, nextView, nextYear, nextMonth))
+    })
   }
 
   function go(delta: number) {
     if (view === 'all') return
 
     if (view === 'year') {
-      pushView('year', year + delta)
+      pushView('year', year + delta, month, delta < 0 ? 'prev' : 'next')
       return
     }
 
@@ -98,18 +106,18 @@ export function AccountMonthNav({ accountId, view, year, month }: Props) {
       nextMonth = 1
       nextYear += 1
     }
-    pushView('month', nextYear, nextMonth)
+    pushView('month', nextYear, nextMonth, delta < 0 ? 'prev' : 'next')
   }
 
   function goCurrent() {
     if (view === 'all') return
 
     if (view === 'year') {
-      pushView('year', now.getFullYear())
+      pushView('year', now.getFullYear(), month, 'current')
       return
     }
 
-    pushView('month', now.getFullYear(), now.getMonth() + 1)
+    pushView('month', now.getFullYear(), now.getMonth() + 1, 'current')
   }
 
   useEffect(() => {
@@ -125,12 +133,19 @@ export function AccountMonthNav({ accountId, view, year, month }: Props) {
 
   return (
     <>
-      <div className="flex items-center gap-2">
+      <div aria-busy={isNavigating} className="relative flex items-center gap-2">
+        <div
+          aria-hidden="true"
+          className={`absolute -bottom-1 left-11 h-0.5 rounded-full bg-[#e4c44a] transition-all duration-300 ${
+            isNavigating ? 'w-[calc(100%-2.75rem)] opacity-100' : 'w-0 opacity-0'
+          }`}
+        />
         <button
           type="button"
           onClick={() => setMenuOpen(true)}
           aria-label="切換全部、年、月檢視"
-          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#e9e9e6] bg-[#fafaf8] text-[#6f747a] transition hover:border-[#d8c7b0] hover:bg-white hover:text-[#202124] active:scale-95"
+          disabled={isNavigating}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#e9e9e6] bg-[#fafaf8] text-[#6f747a] transition hover:border-[#d8c7b0] hover:bg-white hover:text-[#202124] active:scale-95 disabled:opacity-50"
         >
           <FilterIcon />
         </button>
@@ -141,7 +156,9 @@ export function AccountMonthNav({ accountId, view, year, month }: Props) {
             onClick={() => go(-1)}
             aria-label={view === 'year' ? '上一年' : '上個月'}
             disabled={!canNavigate}
-            className="flex h-9 w-9 shrink-0 items-center justify-center text-base font-bold text-[#6f747a] transition hover:bg-[#eeebe4] active:scale-95 disabled:cursor-not-allowed disabled:opacity-35"
+            className={`flex h-9 w-9 shrink-0 items-center justify-center text-base font-bold text-[#6f747a] transition hover:bg-[#eeebe4] active:scale-95 disabled:cursor-not-allowed disabled:opacity-35 ${
+              isNavigating && pendingIntent === 'prev' ? 'scale-95 bg-[#eeebe4] text-[#202124]' : ''
+            }`}
           >
             <ChevronIcon direction="left" />
           </button>
@@ -150,8 +167,9 @@ export function AccountMonthNav({ accountId, view, year, month }: Props) {
             <button
               type="button"
               onClick={goCurrent}
+              disabled={isNavigating}
               title={isCurrentYear || isCurrentMonth ? '目前在當前檢視' : '點擊回到目前'}
-              className={`flex-1 text-center text-xs font-semibold transition ${
+              className={`flex-1 text-center text-xs font-semibold transition disabled:opacity-60 ${
                 isCurrentYear || isCurrentMonth ? 'text-[#3a3d42]' : 'text-[#6f747a] hover:text-[#3a3d42]'
               }`}
             >
@@ -169,7 +187,9 @@ export function AccountMonthNav({ accountId, view, year, month }: Props) {
             onClick={() => go(1)}
             aria-label={view === 'year' ? '下一年' : '下個月'}
             disabled={!canNavigate}
-            className="flex h-9 w-9 shrink-0 items-center justify-center text-base font-bold text-[#6f747a] transition hover:bg-[#eeebe4] active:scale-95 disabled:cursor-not-allowed disabled:opacity-35"
+            className={`flex h-9 w-9 shrink-0 items-center justify-center text-base font-bold text-[#6f747a] transition hover:bg-[#eeebe4] active:scale-95 disabled:cursor-not-allowed disabled:opacity-35 ${
+              isNavigating && pendingIntent === 'next' ? 'scale-95 bg-[#eeebe4] text-[#202124]' : ''
+            }`}
           >
             <ChevronIcon direction="right" />
           </button>
@@ -212,6 +232,7 @@ export function AccountMonthNav({ accountId, view, year, month }: Props) {
                         key={item.value}
                         type="button"
                         onClick={() => pushView(item.value)}
+                        disabled={isNavigating}
                         className={`flex w-full items-center justify-between rounded-[1.1rem] border px-3 py-3 text-left transition active:scale-[0.99] ${
                           active
                             ? 'border-[#202124] bg-[#202124] text-white'
