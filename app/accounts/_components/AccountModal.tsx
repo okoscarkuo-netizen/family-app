@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useTransition } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import type { FamilyAccount } from '@/lib/finance/types'
@@ -22,22 +22,21 @@ const ownerOptions = [
 
 export function AccountModal({ mode, account, onClose }: Props) {
   const router = useRouter()
-  const [isPending, startTransition] = useTransition()
-  const [error, setError] = useState<string | null>(null)
+  const [, startTransition] = useTransition()
 
   function handleSubmit(formData: FormData) {
-    setError(null)
+    const editingId = mode === 'edit' ? account!.id : null
+    onClose()
     startTransition(async () => {
       try {
-        if (mode === 'create') {
-          await createAccount(formData)
+        if (editingId) {
+          await updateAccount(editingId, formData)
         } else {
-          await updateAccount(account!.id, formData)
+          await createAccount(formData)
         }
         router.refresh()
-        onClose()
       } catch (err) {
-        setError(err instanceof Error ? err.message : '發生錯誤，請再試一次')
+        console.error(editingId ? 'updateAccount failed:' : 'createAccount failed:', err)
       }
     })
   }
@@ -60,12 +59,6 @@ export function AccountModal({ mode, account, onClose }: Props) {
         <h2 id="account-modal-title" className="text-lg font-black text-slate-950">
           {mode === 'create' ? '新增帳戶' : '編輯帳戶'}
         </h2>
-
-        {error && (
-          <p className="mt-2 rounded-md border-2 border-slate-950 bg-[#fff45f] px-3 py-2 text-sm font-bold text-slate-950">
-            {error}
-          </p>
-        )}
 
         <form action={handleSubmit} className="mt-4 space-y-3">
           <label className="block">
@@ -194,10 +187,9 @@ export function AccountModal({ mode, account, onClose }: Props) {
               </button>
               <button
                 type="submit"
-                disabled={isPending}
-                className={`${primaryButtonClass} disabled:opacity-50`}
+                className={primaryButtonClass}
               >
-                {isPending ? '儲存中…' : '儲存'}
+                儲存
               </button>
             </div>
           </div>
