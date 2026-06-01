@@ -66,8 +66,6 @@ const KEYPAD_KEYS = [
 ] as const
 const FORM_PADDING_WITH_KEYPAD = 'pb-[calc(26rem+env(safe-area-inset-bottom))]'
 const FORM_PADDING_WITHOUT_KEYPAD = 'pb-[calc(10rem+env(safe-area-inset-bottom))]'
-const WHEEL_ITEM_HEIGHT = 44
-const WHEEL_VISIBLE_ROWS = 5
 const KEYPAD_FOOTER_BOTTOM_OFFSET = 'calc(6.5rem + 2 * env(safe-area-inset-bottom))'
 const ACTION_FOOTER_BOTTOM_OFFSET = 'calc(5.75rem + env(safe-area-inset-bottom))'
 
@@ -76,10 +74,6 @@ type Owner = (typeof OWNERS)[number]
 type ReminderFrequency = (typeof REMINDER_FREQUENCIES)[number]
 type KeypadKey = (typeof KEYPAD_KEYS)[number]
 type TransferAmountSide = 'source' | 'target'
-type PickerOption = {
-  id: string
-  label: string
-}
 
 type SelectOption = {
   value: string
@@ -359,106 +353,6 @@ function resolveCategorySelection(
     parentId: firstGroup.parent.id,
     categoryId: firstGroup.children[0]?.id ?? firstGroup.parent.id,
   }
-}
-
-function PickerWheel({
-  items,
-  selectedId,
-  onSelect,
-}: {
-  items: PickerOption[]
-  selectedId: string
-  onSelect: (value: string) => void
-}) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const scrollTimeoutRef = useRef<number | null>(null)
-  const selectedIndex = Math.max(0, items.findIndex((item) => item.id === selectedId))
-  const selectedLoopIndex = items.length + selectedIndex
-  const loopedItems = [0, 1, 2].flatMap((cycle) => (
-    items.map((item) => ({ ...item, loopKey: `${cycle}-${item.id}` }))
-  ))
-
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container || items.length === 0) return
-
-    const selectedIndex = Math.max(0, items.findIndex((item) => item.id === selectedId))
-    const targetScrollTop = (items.length + selectedIndex) * WHEEL_ITEM_HEIGHT
-    if (Math.abs(container.scrollTop - targetScrollTop) < 4) return
-
-    container.scrollTo({ top: targetScrollTop, behavior: 'smooth' })
-  }, [items, selectedId])
-
-  useEffect(() => {
-    return () => {
-      if (scrollTimeoutRef.current != null) {
-        window.clearTimeout(scrollTimeoutRef.current)
-      }
-    }
-  }, [])
-
-  function handleScroll() {
-    if (scrollTimeoutRef.current != null) {
-      window.clearTimeout(scrollTimeoutRef.current)
-    }
-
-    scrollTimeoutRef.current = window.setTimeout(() => {
-      const container = containerRef.current
-      if (!container || items.length === 0) return
-
-      const rawIndex = Math.max(0, Math.round(container.scrollTop / WHEEL_ITEM_HEIGHT))
-      const nextIndex = rawIndex % items.length
-      if (rawIndex < items.length || rawIndex >= items.length * 2) {
-        container.scrollTo({
-          top: (items.length + nextIndex) * WHEEL_ITEM_HEIGHT,
-          behavior: 'auto',
-        })
-      }
-
-      const nextItem = items[nextIndex]
-      if (!nextItem || nextItem.id === selectedId) return
-      onSelect(nextItem.id)
-    }, 90)
-  }
-
-  return (
-    <div className="relative min-w-0">
-      <div className="relative overflow-hidden rounded-[1.25rem] bg-white/82">
-        <div className="pointer-events-none absolute inset-x-2 top-1/2 z-10 h-[52px] -translate-y-1/2 rounded-[1rem] border border-[#eadfce] bg-white shadow-[0_10px_18px_rgba(15,23,42,0.06)]" />
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-16 bg-gradient-to-b from-[#faf7f0] via-[#faf7f0]/92 to-transparent" />
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-16 bg-gradient-to-t from-[#faf7f0] via-[#faf7f0]/92 to-transparent" />
-        <div
-          ref={containerRef}
-          onScroll={handleScroll}
-          className="no-scrollbar snap-y snap-mandatory overflow-y-auto px-2"
-          style={{
-            height: `${WHEEL_ITEM_HEIGHT * WHEEL_VISIBLE_ROWS}px`,
-            paddingTop: `${WHEEL_ITEM_HEIGHT * 2}px`,
-            paddingBottom: `${WHEEL_ITEM_HEIGHT * 2}px`,
-          }}
-        >
-          {loopedItems.map((item, loopIndex) => {
-            const isActive = loopIndex === selectedLoopIndex
-
-            return (
-              <button
-                key={item.loopKey}
-                type="button"
-                onClick={() => onSelect(item.id)}
-                className={`relative z-20 flex h-[52px] w-full snap-center flex-col items-center justify-center rounded-[1rem] px-2 text-center transition ${
-                  isActive ? 'text-slate-950' : 'text-slate-400'
-                }`}
-              >
-                <span className={`truncate font-black ${isActive ? 'text-[1.04rem]' : 'text-[0.94rem]'}`}>
-                  {item.label}
-                </span>
-              </button>
-            )
-          })}
-        </div>
-      </div>
-    </div>
-  )
 }
 
 function FieldLabel({
@@ -1060,15 +954,11 @@ function MerchantPickerSheet({
         .filter((merchant) => merchant.name.toLocaleLowerCase('zh-TW').includes(normalizedLower))
         .sort((a, b) => a.name.localeCompare(b.name, 'zh-TW'))
     : selectedGroup?.merchants ?? []
-  const visibleOptions = selectedMerchant
-    ? visibleMerchants.map((merchant) => ({ id: merchant.id, label: merchant.name }))
-    : [{ id: '__placeholder__', label: '請選商家' }, ...visibleMerchants.map((merchant) => ({ id: merchant.id, label: merchant.name }))]
   const canUseTypedValue = normalizedValue.length > 0 && !selectedMerchant
 
-  function handleSelectMerchant(name: string) {
-    setDraftValue(name)
-    // 不要在滾輪滑動時跳左側群組：使用者已經選好群組（例如「最近使用」），
-    // 滑商家不應該把他踢去別的母分類。群組要切換用左欄按鈕。
+  function handlePickMerchant(name: string) {
+    onChange(name.trim())
+    onClose()
   }
 
   function handleComplete() {
@@ -1156,51 +1046,58 @@ function MerchantPickerSheet({
               還沒有可用的商家
             </div>
           ) : (
-            <div className="mt-4 grid grid-cols-[minmax(0,0.78fr)_minmax(0,1.22fr)] gap-3">
-              <div className="no-scrollbar max-h-[48vh] overflow-y-auto rounded-[1.6rem] bg-white/90 p-2 shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
-                <div className="space-y-1">
-                  {merchantPickerGroups.map((group) => {
-                    const isActive = group.id === selectedGroup?.id
-                    return (
-                      <button
-                        key={group.id}
-                        type="button"
-                        onClick={() => setSelectedGroupId(group.id)}
-                        className={`w-full rounded-[1rem] px-3 py-2 text-left text-sm font-black transition ${
-                          isActive
-                            ? 'bg-slate-950 text-white shadow-[0_8px_18px_rgba(15,23,42,0.16)]'
-                            : 'bg-[#f8f5ef] text-slate-600'
-                        }`}
-                      >
-                        {group.label}
-                      </button>
-                    )
-                  })}
-                </div>
+            <div className="mt-4 flex overflow-hidden rounded-[1.6rem] bg-white shadow-[0_16px_34px_rgba(15,23,42,0.08)]" style={{ height: '60vh', maxHeight: '480px' }}>
+              <div className="w-[108px] shrink-0 overflow-y-auto bg-[#f5f5f7]">
+                {merchantPickerGroups.map((group) => {
+                  const isActive = group.id === selectedGroup?.id
+                  return (
+                    <button
+                      key={group.id}
+                      type="button"
+                      onClick={() => setSelectedGroupId(group.id)}
+                      className={`flex w-full items-center justify-center px-2 py-3 text-[15px] transition ${
+                        isActive
+                          ? 'bg-white font-black text-slate-900'
+                          : 'font-bold text-slate-500'
+                      }`}
+                    >
+                      <span className="truncate">{group.label}</span>
+                    </button>
+                  )
+                })}
               </div>
 
-              <div className="rounded-[1.6rem] bg-white/90 px-2 pb-2 pt-3 shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
-                <div className="px-3 pb-2 text-xs font-black tracking-[0.16em] text-slate-400">
-                  商家
+              <div className="flex-1 overflow-y-auto px-3 py-2">
+                <div className="px-1 py-2 text-[13px] font-bold text-slate-400">
+                  {selectedGroup?.label ?? '商家'}
                 </div>
-                {visibleOptions.length > 0 ? (
-                  <PickerWheel
-                    items={visibleOptions}
-                    selectedId={selectedMerchant?.id ?? '__placeholder__'}
-                    onSelect={(merchantId) => {
-                      if (merchantId === '__placeholder__') return
-                      const nextMerchant = visibleMerchants.find((merchant) => merchant.id === merchantId)
-                      if (!nextMerchant) return
-                      handleSelectMerchant(nextMerchant.name)
-                    }}
-                  />
+                {visibleMerchants.length > 0 ? (
+                  <div className="grid grid-cols-4 gap-1">
+                    {visibleMerchants.map((merchant) => {
+                      const isSelected = merchant.id === selectedMerchant?.id
+                      return (
+                        <button
+                          key={merchant.id}
+                          type="button"
+                          onClick={() => handlePickMerchant(merchant.name)}
+                          className={`flex min-h-[3.6rem] items-center justify-center rounded-[1rem] px-1 py-2 transition ${
+                            isSelected ? 'bg-[#fff1e3]' : 'active:bg-slate-50'
+                          }`}
+                        >
+                          <span className="line-clamp-2 text-center text-[12px] font-bold text-slate-700">
+                            {merchant.name}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
                 ) : (
-                  <div className="flex h-[calc(52px*5)] flex-col items-center justify-center gap-3 px-4 text-center text-sm font-bold text-slate-400">
+                  <div className="flex flex-col items-center justify-center gap-3 px-4 py-12 text-center text-sm font-bold text-slate-400">
                     <div>這個分類沒有商家</div>
                     {canUseTypedValue ? (
                       <button
                         type="button"
-                        onClick={() => handleSelectMerchant(normalizedValue)}
+                        onClick={() => handlePickMerchant(normalizedValue)}
                         className="rounded-full bg-slate-950 px-4 py-2 text-sm font-black text-white"
                       >
                         使用「{normalizedValue}」
@@ -2268,6 +2165,87 @@ export function TransactionForm({
         : transaction?.transfer_target_currency ?? null
 
     setMessage(null)
+
+    const isOptimisticTxSave = kind !== 'reminder' && (isEditMode || submitMode === 'ledger')
+    if (isOptimisticTxSave) {
+      submittedRef.current = true
+      setPending(true)
+      formData.set('amount', String(amountValue))
+      formData.set('kind', kind)
+      formData.set('currency', currency)
+      formData.set('category_id', resolvedCategoryId)
+      formData.set('account_id', resolvedAccountId)
+      formData.set('to_account_id', kind === 'transfer' ? resolvedToAccountId : '')
+      formData.set(
+        'transfer_target_amount',
+        kind === 'transfer' && transferTargetAmount != null ? String(transferTargetAmount) : '',
+      )
+      formData.set(
+        'transfer_target_currency',
+        kind === 'transfer' && transferTargetCurrency ? transferTargetCurrency : '',
+      )
+      formData.set('merchant', merchant)
+      formData.set('occurred_at', occurredAt)
+      formData.set('owner', owner)
+      formData.set('note', note)
+      if (selectedCategory) formData.set('category_name', selectedCategory.name)
+
+      const recurringPayload = !isEditMode && recurringOn && resolvedCategoryId && resolvedAccountId
+        ? {
+            name: merchant.trim() || (selectedCategory?.name ?? '定期交易'),
+            kind: kind as 'income' | 'expense' | 'transfer',
+            amount: amountValue,
+            currency,
+            accountId: resolvedAccountId,
+            targetAccountId: kind === 'transfer' ? (resolvedToAccountId || null) : null,
+            targetAmount: kind === 'transfer' ? transferTargetAmount : null,
+            targetCurrency: kind === 'transfer' ? transferTargetCurrency : null,
+            categoryId: resolvedCategoryId,
+            merchantId: null,
+            owner,
+            frequency: recurringFrequency,
+            startDate: occurredAt.slice(0, 10),
+            endType: recurringEndType,
+            endCount: recurringEndType === 'count' ? recurringEndCount : null,
+            notes: note || null,
+          }
+        : null
+
+      const editingTransactionId = isEditMode ? transaction.id : null
+      router.push(returnUrl ?? ledgerHrefForOccurredAt(occurredAt))
+
+      void (async () => {
+        try {
+          const saveResult = editingTransactionId
+            ? await updateTransaction(editingTransactionId, formData)
+            : await createTransaction(formData)
+          if (!saveResult.ok) {
+            console.error(
+              editingTransactionId ? 'updateTransaction failed:' : 'createTransaction failed:',
+              saveResult.error,
+            )
+            return
+          }
+          if (recurringPayload) {
+            const recurringResult = await createRecurringTransaction(recurringPayload)
+            if (!recurringResult.ok) {
+              console.error('createRecurringTransaction failed:', recurringResult.error)
+            }
+          }
+          router.refresh()
+        } catch (err) {
+          console.error(
+            editingTransactionId ? 'updateTransaction threw:' : 'createTransaction threw:',
+            err,
+          )
+        } finally {
+          submittingRef.current = false
+        }
+      })()
+
+      return
+    }
+
     setPending(true)
     try {
       const result = kind === 'reminder'
@@ -2396,32 +2374,30 @@ export function TransactionForm({
     }
   }
 
-  async function handleDelete() {
+  function handleDelete() {
     if (!isEditMode) return
     if (submittingRef.current) return
     if (submittedRef.current) return
     if (!window.confirm('確定要刪除這筆交易嗎？帳戶餘額也會一起沖回。')) return
 
     submittingRef.current = true
-    let keepPendingAfterDelete = false
+    submittedRef.current = true
     setPending(true)
     setMessage(null)
-    try {
-      await deleteTransaction(transaction.id)
-      submittedRef.current = true
-      keepPendingAfterDelete = true
-      router.push(returnUrl ?? ledgerHrefForOccurredAt(occurredAt))
-    } catch (error) {
-      setMessage({
-        tone: 'error',
-        text: error instanceof Error ? error.message : '刪除失敗，請稍後再試。',
-      })
-    } finally {
-      submittingRef.current = false
-      if (!keepPendingAfterDelete) {
-        setPending(false)
+
+    const deletingTransactionId = transaction.id
+    router.push(returnUrl ?? ledgerHrefForOccurredAt(occurredAt))
+
+    void (async () => {
+      try {
+        await deleteTransaction(deletingTransactionId)
+        router.refresh()
+      } catch (err) {
+        console.error('deleteTransaction threw:', err)
+      } finally {
+        submittingRef.current = false
       }
-    }
+    })()
   }
 
   function updateKind(nextKind: Kind) {
