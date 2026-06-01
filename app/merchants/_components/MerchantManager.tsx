@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useOptimistic, useRef, useState, useTransition } from 'react'
 import type { KeyboardEvent } from 'react'
 import { useRouter } from 'next/navigation'
 import type { FamilyMerchant, FamilyMerchantGroup } from '@/lib/family-transactions'
@@ -33,11 +33,48 @@ function handleLastUsedValue(merchant: FamilyMerchant) {
   return merchant.last_used_at ? merchant.last_used_at.slice(0, 10) : ''
 }
 
+type GroupOptimisticAction =
+  | { type: 'add'; group: FamilyMerchantGroup }
+  | { type: 'update'; group: FamilyMerchantGroup }
+  | { type: 'archive'; id: string }
+
+type MerchantOptimisticAction =
+  | { type: 'add'; merchant: FamilyMerchant }
+  | { type: 'update'; merchant: FamilyMerchant }
+  | { type: 'unassignFromGroup'; groupId: string }
+
 export function MerchantManager({ initialMerchants, initialGroups }: Props) {
   const router = useRouter()
   const merchantNameInputRef = useRef<HTMLInputElement>(null)
   const [merchants, setMerchants] = useState(initialMerchants)
   const [groups, setGroups] = useState(initialGroups)
+  const [, startTransition] = useTransition()
+  const [optimisticGroups, applyOptimisticGroups] = useOptimistic(
+    groups,
+    (current: FamilyMerchantGroup[], action: GroupOptimisticAction): FamilyMerchantGroup[] => {
+      switch (action.type) {
+        case 'add':
+          return [...current, action.group]
+        case 'update':
+          return current.map((item) => (item.id === action.group.id ? action.group : item))
+        case 'archive':
+          return current.filter((item) => item.id !== action.id)
+      }
+    },
+  )
+  const [optimisticMerchants, applyOptimisticMerchants] = useOptimistic(
+    merchants,
+    (current: FamilyMerchant[], action: MerchantOptimisticAction): FamilyMerchant[] => {
+      switch (action.type) {
+        case 'add':
+          return [...current, action.merchant]
+        case 'update':
+          return current.map((item) => (item.id === action.merchant.id ? action.merchant : item))
+        case 'unassignFromGroup':
+          return current.map((item) => (item.group_id === action.groupId ? { ...item, group_id: null } : item))
+      }
+    },
+  )
   const [view, setView] = useState<MerchantView>('merchants')
   const [query, setQuery] = useState('')
   const [newMerchantName, setNewMerchantName] = useState('')
@@ -47,29 +84,29 @@ export function MerchantManager({ initialMerchants, initialGroups }: Props) {
   const [editingGroupName, setEditingGroupName] = useState('')
   const [editingMerchantId, setEditingMerchantId] = useState<string | null>(null)
   const [editingMerchantName, setEditingMerchantName] = useState('')
-  const [pendingKey, setPendingKey] = useState<string | null>(null)
+  const pendingKey: string | null = null
   const [notice, setNotice] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
 
   const normalizedQuery = normalizeSearchText(query)
   const groupOptions = [
     { value: '', label: '未分類' },
-    ...groups.map((group) => ({ value: group.id, label: group.name })),
+    ...optimisticGroups.map((group) => ({ value: group.id, label: group.name })),
   ]
 
   const merchantCountByGroupId = useMemo(() => {
     const counts = new Map<string, number>()
-    for (const merchant of merchants) {
+    for (const merchant of optimisticMerchants) {
       if (!merchant.group_id) continue
       counts.set(merchant.group_id, (counts.get(merchant.group_id) ?? 0) + 1)
     }
     return counts
-  }, [merchants])
+  }, [optimisticMerchants])
 
   const groupedMerchants = useMemo(() => {
     const grouped = new Map<string, FamilyMerchant[]>()
     const unassigned: FamilyMerchant[] = []
 
-    const sortedMerchants = [...merchants].sort((a, b) => {
+    const sortedMerchants = [...optimisticMerchants].sort((a, b) => {
       if (a.last_used_at !== b.last_used_at) {
         return b.last_used_at.localeCompare(a.last_used_at)
       }
@@ -89,10 +126,10 @@ export function MerchantManager({ initialMerchants, initialGroups }: Props) {
     }
 
     return { grouped, unassigned }
-  }, [merchants])
+  }, [optimisticMerchants])
 
   const recentMerchants = useMemo(() => {
-    return [...merchants]
+    return [...optimisticMerchants]
       .sort((a, b) => {
         if (a.last_used_at !== b.last_used_at) {
           return b.last_used_at.localeCompare(a.last_used_at)
@@ -101,19 +138,19 @@ export function MerchantManager({ initialMerchants, initialGroups }: Props) {
         return a.name.localeCompare(b.name, 'zh-TW')
       })
       .slice(0, 5)
-  }, [merchants])
+  }, [optimisticMerchants])
 
   const filteredGroups = useMemo(() => {
-    if (!normalizedQuery) return groups
+    if (!normalizedQuery) return optimisticGroups
 
-    return groups.filter((group) => {
+    return optimisticGroups.filter((group) => {
       const groupMatches = group.name.toLocaleLowerCase('zh-TW').includes(normalizedQuery)
       const merchantMatches = (groupedMerchants.grouped.get(group.id) ?? []).some((merchant) =>
         merchant.name.toLocaleLowerCase('zh-TW').includes(normalizedQuery),
       )
       return groupMatches || merchantMatches
     })
-  }, [groups, groupedMerchants.grouped, normalizedQuery])
+  }, [optimisticGroups, groupedMerchants.grouped, normalizedQuery])
 
   const filteredUnassignedMerchants = useMemo(() => {
     if (!normalizedQuery) return groupedMerchants.unassigned
@@ -169,12 +206,16 @@ export function MerchantManager({ initialMerchants, initialGroups }: Props) {
   function startEditingGroup(group: FamilyMerchantGroup) {
     setEditingGroupId(group.id)
     setEditingGroupName(group.name)
+    setEditingMerchantId(null)
+    setEditingMerchantName('')
     setNotice(null)
   }
 
   function startEditingMerchant(merchant: FamilyMerchant) {
     setEditingMerchantId(merchant.id)
     setEditingMerchantName(merchant.name)
+    setEditingGroupId(null)
+    setEditingGroupName('')
     setNotice(null)
   }
 
@@ -188,33 +229,38 @@ export function MerchantManager({ initialMerchants, initialGroups }: Props) {
     })
   }
 
-  async function handleCreateGroup() {
+  function handleCreateGroup() {
     const normalizedName = newGroupName.trim()
     if (!normalizedName) {
       setNotice({ tone: 'error', text: '商家分類名稱不能空白。' })
       return
     }
 
-    setPendingKey('create-group')
+    const nowIso = new Date().toISOString()
+    const tempGroup: FamilyMerchantGroup = {
+      id: `temp-${crypto.randomUUID()}`,
+      name: normalizedName,
+      sort_order: Number.MAX_SAFE_INTEGER,
+      is_archived: false,
+      created_at: nowIso,
+      updated_at: nowIso,
+    }
+    setNewGroupName('')
     setNotice(null)
 
-    try {
+    startTransition(async () => {
+      applyOptimisticGroups({ type: 'add', group: tempGroup })
       const result = await createMerchantGroup(normalizedName)
       if (!result.ok) {
         setNotice({ tone: 'error', text: result.error })
         return
       }
-
       upsertGroup(result.group)
-      setNewGroupName('')
       setNewMerchantGroupId(result.group.id)
-      setNotice({ tone: 'success', text: '商家分類已新增。' })
-    } finally {
-      setPendingKey(null)
-    }
+    })
   }
 
-  async function handleRenameGroup() {
+  function handleRenameGroup() {
     if (!editingGroupId) return
 
     const normalizedName = editingGroupName.trim()
@@ -223,74 +269,79 @@ export function MerchantManager({ initialMerchants, initialGroups }: Props) {
       return
     }
 
-    setPendingKey(`rename-group-${editingGroupId}`)
+    const target = groups.find((item) => item.id === editingGroupId)
+    if (!target) return
+
+    const optimisticUpdated: FamilyMerchantGroup = { ...target, name: normalizedName }
+    const updateId = editingGroupId
+    setEditingGroupId(null)
+    setEditingGroupName('')
     setNotice(null)
 
-    try {
-      const result = await renameMerchantGroup({ id: editingGroupId, name: normalizedName })
+    startTransition(async () => {
+      applyOptimisticGroups({ type: 'update', group: optimisticUpdated })
+      const result = await renameMerchantGroup({ id: updateId, name: normalizedName })
       if (!result.ok) {
         setNotice({ tone: 'error', text: result.error })
         return
       }
-
       upsertGroup(result.group)
-      setEditingGroupId(null)
-      setEditingGroupName('')
-      setNotice({ tone: 'success', text: '商家分類已更新。' })
-    } finally {
-      setPendingKey(null)
-    }
+    })
   }
 
-  async function handleArchiveGroup(group: FamilyMerchantGroup) {
+  function handleArchiveGroup(group: FamilyMerchantGroup) {
     if (!window.confirm(`封存「${group.name}」？分類裡的商家會回到未分類。`)) return
 
-    setPendingKey(`archive-group-${group.id}`)
+    const archivedGroupId = group.id
     setNotice(null)
 
-    try {
-      const result = await archiveMerchantGroup(group.id)
+    startTransition(async () => {
+      applyOptimisticGroups({ type: 'archive', id: archivedGroupId })
+      applyOptimisticMerchants({ type: 'unassignFromGroup', groupId: archivedGroupId })
+      const result = await archiveMerchantGroup(archivedGroupId)
       if (!result.ok) {
         setNotice({ tone: 'error', text: result.error })
         return
       }
-
-      archiveGroupLocal(group.id)
-      setNotice({ tone: 'success', text: '商家分類已封存。' })
-    } finally {
-      setPendingKey(null)
-    }
+      archiveGroupLocal(archivedGroupId)
+    })
   }
 
-  async function handleCreateMerchant() {
+  function handleCreateMerchant() {
     const normalizedName = newMerchantName.trim()
     if (!normalizedName) {
       setNotice({ tone: 'error', text: '商家名稱不能空白。' })
       return
     }
 
-    setPendingKey('create-merchant')
+    const targetGroupId = newMerchantGroupId || null
+    const nowIso = new Date().toISOString()
+    const tempMerchant: FamilyMerchant = {
+      id: `temp-${crypto.randomUUID()}`,
+      name: normalizedName,
+      group_id: targetGroupId,
+      last_used_at: nowIso,
+      is_archived: false,
+      created_at: nowIso,
+    }
+    setNewMerchantName('')
     setNotice(null)
 
-    try {
+    startTransition(async () => {
+      applyOptimisticMerchants({ type: 'add', merchant: tempMerchant })
       const result = await createMerchant({
         name: normalizedName,
-        groupId: newMerchantGroupId || null,
+        groupId: targetGroupId,
       })
       if (!result.ok) {
         setNotice({ tone: 'error', text: result.error })
         return
       }
-
       upsertMerchant(result.merchant)
-      setNewMerchantName('')
-      setNotice({ tone: 'success', text: '商家已新增。' })
-    } finally {
-      setPendingKey(null)
-    }
+    })
   }
 
-  async function handleMerchantRename() {
+  function handleMerchantRename() {
     if (!editingMerchantId) return
 
     const normalizedName = editingMerchantName.trim()
@@ -299,50 +350,50 @@ export function MerchantManager({ initialMerchants, initialGroups }: Props) {
       return
     }
 
-    const currentMerchant = merchants.find((item) => item.id === editingMerchantId) ?? null
+    const target = merchants.find((item) => item.id === editingMerchantId) ?? null
+    if (!target) return
 
-    setPendingKey(`rename-merchant-${editingMerchantId}`)
+    const optimisticUpdated: FamilyMerchant = { ...target, name: normalizedName }
+    const updateId = editingMerchantId
+    setEditingMerchantId(null)
+    setEditingMerchantName('')
     setNotice(null)
 
-    try {
+    startTransition(async () => {
+      applyOptimisticMerchants({ type: 'update', merchant: optimisticUpdated })
       const result = await updateMerchant({
-        merchantId: editingMerchantId,
+        merchantId: updateId,
         name: normalizedName,
-        groupId: currentMerchant?.group_id ?? null,
+        groupId: target.group_id,
       })
       if (!result.ok) {
         setNotice({ tone: 'error', text: result.error })
         return
       }
-
       upsertMerchant(result.merchant)
-      setEditingMerchantId(null)
-      setEditingMerchantName('')
-      setNotice({ tone: 'success', text: '商家已更新。' })
-    } finally {
-      setPendingKey(null)
-    }
+    })
   }
 
-  async function handleMerchantGroupChange(merchantId: string, nextGroupId: string) {
-    setPendingKey(`merchant-${merchantId}`)
+  function handleMerchantGroupChange(merchantId: string, nextGroupId: string) {
+    const target = merchants.find((item) => item.id === merchantId)
+    if (!target) return
+
+    const resolvedGroupId = nextGroupId === '__unassigned__' ? null : nextGroupId
+    const optimisticUpdated: FamilyMerchant = { ...target, group_id: resolvedGroupId }
     setNotice(null)
 
-    try {
+    startTransition(async () => {
+      applyOptimisticMerchants({ type: 'update', merchant: optimisticUpdated })
       const result = await updateMerchantGroup({
         merchantId,
-        groupId: nextGroupId === '__unassigned__' ? null : nextGroupId,
+        groupId: resolvedGroupId,
       })
       if (!result.ok) {
         setNotice({ tone: 'error', text: result.error })
         return
       }
-
       upsertMerchant(result.merchant)
-      setNotice({ tone: 'success', text: '商家分類已更新。' })
-    } finally {
-      setPendingKey(null)
-    }
+    })
   }
 
   function renderMerchantRow(merchant: FamilyMerchant) {
@@ -364,7 +415,14 @@ export function MerchantManager({ initialMerchants, initialGroups }: Props) {
                 type="text"
                 value={editingMerchantName}
                 onChange={(event) => setEditingMerchantName(event.target.value)}
-                onKeyDown={(event) => handleEnter(event, handleMerchantRename)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Escape') {
+                    setEditingMerchantId(null)
+                    setEditingMerchantName('')
+                    return
+                  }
+                  handleEnter(event, handleMerchantRename)
+                }}
                 className="w-full rounded-[1rem] border border-[#eadfce] bg-white px-3 py-2 text-sm font-black text-slate-950 outline-none"
                 aria-label="商家名稱"
                 autoFocus
@@ -465,7 +523,14 @@ export function MerchantManager({ initialMerchants, initialGroups }: Props) {
                   type="text"
                   value={editingGroupName}
                   onChange={(event) => setEditingGroupName(event.target.value)}
-                  onKeyDown={(event) => handleEnter(event, handleRenameGroup)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      setEditingGroupId(null)
+                      setEditingGroupName('')
+                      return
+                    }
+                    handleEnter(event, handleRenameGroup)
+                  }}
                   className="w-full rounded-[1rem] border border-[#eadfce] bg-[#fcfbf8] px-3 py-2 text-sm font-black text-slate-950 outline-none"
                   aria-label="商家分類名稱"
                   autoFocus
