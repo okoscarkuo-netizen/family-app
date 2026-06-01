@@ -168,12 +168,64 @@ npx vercel logs family-app-ruddy-one.vercel.app --limit 50
 ```
 從這個 log 找 500 錯誤、找 error 訊息。**不要靠猜**。
 
-### 部署指令
+### 部署指令（2026-06-01 起改用「推 main 自動部」）
+
+**禁止從本地 `vercel deploy --prod` 推 production。**
+
+理由：多個 AI session 同時動同一個 repo，誰最後推 `vercel --prod` 誰贏，會把別人剛部的版本蓋掉（已踩過至少兩次，見雷 8）。
+
+**正確流程**：
 
 ```bash
-npx vercel deploy --prod
+# 確認工作區乾淨且都 commit 了
+git status --short          # 必須空白
+
+# push 到 main，Vercel 自動 build + deploy 到 production
+git push origin main
 ```
-部署完成後給使用者 production URL 確認。
+
+如果在 feature 分支：
+
+1. 先 commit 並 push 到該分支 → Vercel 自動產生 preview URL（給使用者預覽）
+2. 確認 preview 沒問題後，到 GitHub 開 PR、merge 進 main
+3. Merge 之後 Vercel 自動部 production
+
+**例外**：使用者明確說「就部本地這版」才可以 `vercel deploy --prod`，且必須在執行前提醒使用者「這會繞過 main、別的 session 的工作可能被覆蓋」。
+
+### Production 出錯怎麼查（補充）
+
+```bash
+npx vercel logs family-app-ruddy-one.vercel.app --limit 50
+```
+
+---
+
+## 三點五、多 session 協作規則（避免互相覆蓋）
+
+> 這個專案會被多個 AI session（Claude、Codex、Antigravity 等）同時編輯，沒處理會發生「A session 改的東西被 B session 覆蓋」的慘案。
+
+### 規則：用 `docs/session-log.md` 互相通知
+
+每個 session **開工前**先讀 `docs/session-log.md`，並在最上面追加一行：
+
+```
+2026-06-01 11:30  Claude   feat/app-smoothness   開始改 AccountList 顯示分類總額
+```
+
+格式：`日期 時間  工具  分支  做什麼`
+
+**開工前必檢查項**：
+1. `git status --short` — 看工作區有沒有別人沒 commit 的改動
+2. 讀 `docs/session-log.md` 最新幾行 — 看別人現在在動什麼
+3. 如果發現別人正在動同樣的檔案 → **停下來問使用者**，不要直接動
+4. 完工或離開前，在同一行後面加 `→ 完成` 或 `→ 暫停`
+
+### 看到別人的 uncommitted 改動怎麼辦
+
+- **不要 stash 或 reset 別人的工作**
+- **不要 commit 別人的工作**（除非使用者要求）
+- 改自己負責的檔案、避開別人改的檔案
+- 如果你的改動需要動到別人正在動的檔案 → 跟使用者確認
 
 ---
 
