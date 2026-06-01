@@ -7,6 +7,7 @@ import {
 import { softSurfaceClass } from '@/components/PageShell'
 import { getCategoryDisplayIcon } from '@/lib/category-icons'
 import { CategoryIcon } from '@/components/CategoryIcon'
+import { LoadMoreTransactionsLink } from '@/app/ledger/_components/LoadMoreTransactionsLink'
 
 type LedgerAccount = {
   id: string
@@ -181,6 +182,7 @@ export function TransactionList({
   const groups = groupByDate(transactions)
   const accountNames = new Map(accounts.map((account) => [account.id, account.name]))
   const hasMore = Boolean(totalCount && totalCount > transactions.length)
+  const safeTotalCount = totalCount ?? transactions.length
 
   return (
     <div>
@@ -264,13 +266,11 @@ export function TransactionList({
       ))}
       {hasMore && loadMoreHref ? (
         <div className="border-t-2 border-[#f4f4f2] bg-white px-4 py-4">
-          <Link
+          <LoadMoreTransactionsLink
             href={loadMoreHref}
-            scroll={false}
-            className="flex min-h-11 items-center justify-center rounded-full border border-[#e9e9e6] bg-[#fafaf8] px-4 text-[0.82rem] font-black text-[#5f6368] transition active:scale-[0.99] active:bg-[#f4f4f2]"
-          >
-            顯示更多，已顯示 {transactions.length.toLocaleString('zh-TW')} / {totalCount?.toLocaleString('zh-TW')} 筆
-          </Link>
+            shownCount={transactions.length}
+            totalCount={safeTotalCount}
+          />
         </div>
       ) : null}
     </div>
