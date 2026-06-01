@@ -2409,6 +2409,7 @@ export function TransactionForm({
   const router = useRouter()
   const [kind, setKind] = useState<Kind>(initialKind)
   const [pending, setPending] = useState(false)
+  const submittingRef = useRef(false)
   const [amount, setAmount] = useState(isEditMode ? String(Number(transaction.amount)) : '')
   const [transferTargetAmount, setTransferTargetAmount] = useState(
     isEditMode && initialKind === 'transfer'
@@ -2580,7 +2581,9 @@ export function TransactionForm({
   }, [isCategoryPickerOpen, isCategoryManagerOpen, isMerchantPickerOpen, isMerchantManagerOpen])
 
   async function handleSubmit(formData: FormData) {
+    if (submittingRef.current) return
     if (!canSubmit) return
+    submittingRef.current = true
 
     const submitMode = !isEditMode && formData.get('submitMode') === 'stay' ? 'stay' : 'ledger'
     const transferTargetAmount =
@@ -2688,14 +2691,17 @@ export function TransactionForm({
         text: error instanceof Error ? error.message : `${isEditMode ? '更新' : '新增'}失敗，請稍後再試。`,
       })
     } finally {
+      submittingRef.current = false
       setPending(false)
     }
   }
 
   async function handleDelete() {
     if (!isEditMode) return
+    if (submittingRef.current) return
     if (!window.confirm('確定要刪除這筆交易嗎？帳戶餘額也會一起沖回。')) return
 
+    submittingRef.current = true
     setPending(true)
     setMessage(null)
     try {
@@ -2707,6 +2713,7 @@ export function TransactionForm({
         text: error instanceof Error ? error.message : '刪除失敗，請稍後再試。',
       })
     } finally {
+      submittingRef.current = false
       setPending(false)
     }
   }
