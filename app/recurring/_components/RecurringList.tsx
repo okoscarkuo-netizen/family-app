@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useTransition } from 'react'
+import { useOptimistic, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import type { RecurringTransaction } from '@/lib/recurring-db'
 import { deleteRecurringTransaction, toggleRecurringTransaction } from '@/app/actions/recurring'
@@ -17,12 +17,27 @@ function formatMoney(amount: number, currency: string) {
   return currency === 'TWD' ? `NT$${value}` : `${value} ${currency}`
 }
 
+type OptimisticAction =
+  | { type: 'toggle'; id: string; isActive: boolean }
+  | { type: 'delete'; id: string }
+
 export function RecurringList({ items }: { items: RecurringTransaction[] }) {
   const router = useRouter()
+  const [optimisticItems, applyOptimistic] = useOptimistic(
+    items,
+    (currentItems: RecurringTransaction[], action: OptimisticAction) => {
+      if (action.type === 'delete') {
+        return currentItems.filter((item) => item.id !== action.id)
+      }
+      return currentItems.map((item) => (
+        item.id === action.id ? { ...item, isActive: action.isActive } : item
+      ))
+    },
+  )
   const [busyId, setBusyId] = useState<string | null>(null)
   const [, startTransition] = useTransition()
 
-  if (items.length === 0) {
+  if (optimisticItems.length === 0) {
     return (
       <div className="px-5 py-12 text-center text-sm font-bold text-slate-400">
         還沒有定期交易。<br />在「記一筆」勾選「＋ 週期」即可建立。
@@ -31,11 +46,21 @@ export function RecurringList({ items }: { items: RecurringTransaction[] }) {
   }
 
   function handleToggle(id: string, currentActive: boolean) {
+    const nextActive = !currentActive
     setBusyId(id)
     startTransition(async () => {
-      await toggleRecurringTransaction(id, !currentActive)
-      router.refresh()
-      setBusyId(null)
+      applyOptimistic({ type: 'toggle', id, isActive: nextActive })
+      try {
+        const result = await toggleRecurringTransaction(id, nextActive)
+        if (!result.ok) {
+          window.alert(`更新失敗：${result.error}`)
+        }
+      } catch {
+        window.alert('更新失敗，請再試一次。')
+      } finally {
+        setBusyId(null)
+        router.refresh()
+      }
     })
   }
 
@@ -43,15 +68,24 @@ export function RecurringList({ items }: { items: RecurringTransaction[] }) {
     if (!window.confirm(`確定刪除「${name}」？已產生的歷史交易會保留。`)) return
     setBusyId(id)
     startTransition(async () => {
-      await deleteRecurringTransaction(id)
-      router.refresh()
-      setBusyId(null)
+      applyOptimistic({ type: 'delete', id })
+      try {
+        const result = await deleteRecurringTransaction(id)
+        if (!result.ok) {
+          window.alert(`刪除失敗：${result.error}`)
+        }
+      } catch {
+        window.alert('刪除失敗，請再試一次。')
+      } finally {
+        setBusyId(null)
+        router.refresh()
+      }
     })
   }
 
   return (
     <div className="space-y-3 p-4">
-      {items.map((it) => {
+      {optimisticItems.map((it) => {
         const isIncome = it.kind === 'income'
         const meta = [
           FREQ_LABELS[it.frequency],
