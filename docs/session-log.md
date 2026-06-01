@@ -21,4 +21,5 @@
 
 | 日期 時間 | 工具 | 分支 | 做什麼 | 狀態 |
 |---|---|---|---|---|
+| 2026-06-01 11:05 | Claude | main ← feat/app-smoothness | 合併 feat/app-smoothness 進 main 並推上去（讓 Vercel 自動部 production，修復商家選擇器舊版顯示） | 進行中 |
 | 2026-06-01 11:30 | Claude | feat/app-smoothness | 建立 session log + 加入多 session 協作規則進 core_rules.md | 完成 |
