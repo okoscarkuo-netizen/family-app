@@ -2533,6 +2533,14 @@ export function TransactionForm({
     setCategoryId(nextGroup.children[0]?.id ?? nextGroup.parent.id)
   }
 
+  function handleAccountChange(value: string) {
+    setAccountId(value)
+    const nextAccount = accountById.get(value)
+    if (nextAccount && isCurrency(nextAccount.currency)) {
+      setCurrency(nextAccount.currency as Currency)
+    }
+  }
+
   function handleTransferSourceChange(value: string) {
     setAccountId(value)
     transferTargetManualRef.current = false
@@ -3211,14 +3219,14 @@ export function TransactionForm({
                 <AccountChipRow
                   accounts={frequentAccounts}
                   selectedId={resolvedAccountId}
-                  onSelect={(id) => setAccountId(id)}
+                  onSelect={handleAccountChange}
                 />
                 <SelectFieldRow
                   tone="bg-[#f0b542]"
                   label={accountFieldLabel(pageKind)}
                   value={selectedAccount ? formatAccountLabel(selectedAccount) : accountFieldPlaceholder(pageKind)}
                   selectedValue={resolvedAccountId}
-                  onChange={setAccountId}
+                  onChange={handleAccountChange}
                   options={[
                     { value: '', label: accountFieldPlaceholder(pageKind) },
                     ...shortOptions,
