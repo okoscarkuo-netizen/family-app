@@ -24,6 +24,7 @@ import {
   type FamilyMerchant,
   type FamilyMerchantGroup,
   type FamilyTransaction,
+  type RecentAccountIdsByKind,
   type TransactionKind,
   type TransactionFormPreset,
 } from '@/lib/family-transactions'
@@ -96,6 +97,7 @@ type Props = {
   transaction?: FamilyTransaction | null
   returnUrl?: string
   initialKind?: Kind
+  recentAccountIdsByKind?: RecentAccountIdsByKind
 }
 
 function currentLocalDateTimeValue() {
@@ -176,6 +178,29 @@ function buildAccountOptions(
     .filter((group): group is SelectOptionGroup => Boolean(group))
 }
 
+function pageKindToDbKind(kind: Kind): TransactionKind {
+  return kind === 'reminder' ? 'expense' : (kind as TransactionKind)
+}
+
+function selectFrequentAccountIds(
+  pageKind: Kind,
+  recentByKind: RecentAccountIdsByKind | undefined,
+  accounts: Pick<FamilyAccount, 'id' | 'favorite'>[],
+  limit = 5,
+): string[] {
+  const dbKind = pageKindToDbKind(pageKind)
+  const recent = recentByKind?.[dbKind] ?? []
+  const favoriteIds = accounts.filter((account) => account.favorite).map((account) => account.id)
+  const validIds = new Set(accounts.map((account) => account.id))
+  const merged: string[] = []
+  for (const id of [...recent, ...favoriteIds]) {
+    if (!validIds.has(id)) continue
+    if (merged.includes(id)) continue
+    merged.push(id)
+    if (merged.length >= limit) break
+  }
+  return merged
+}
 
 function amountAccentClass(kind: Kind) {
   if (kind === 'reminder') return 'text-[#4f8d7c]'
@@ -417,6 +442,60 @@ function SelectFieldRow({
         )}
       </select>
     </label>
+  )
+}
+
+function AccountChipRow({
+  accounts,
+  selectedId,
+  onSelect,
+}: {
+  accounts: Pick<FamilyAccount, 'id' | 'name' | 'currency' | 'favorite'>[]
+  selectedId: string
+  onSelect: (id: string) => void
+}) {
+  if (accounts.length < 2) return null
+  return (
+    <div className="flex flex-wrap gap-1.5 px-5 pb-2 pt-2">
+      {accounts.map((account) => {
+        const active = selectedId === account.id
+        return (
+          <button
+            key={account.id}
+            type="button"
+            onClick={() => onSelect(account.id)}
+            className={`rounded-full px-3 py-1.5 text-xs font-black transition ${
+              active
+                ? 'bg-[#f0b542] text-white shadow-[0_4px_10px_rgba(240,181,66,0.35)]'
+                : 'bg-[#fff5dc] text-[#a86a07] hover:bg-[#ffeec5]'
+            }`}
+          >
+            {account.name}
+            {account.favorite ? ' ★' : ''}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function ShowAllAccountsToggle({
+  showAll,
+  onToggle,
+}: {
+  showAll: boolean
+  onToggle: () => void
+}) {
+  return (
+    <div className="flex justify-end px-5 pb-1 pt-0.5">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="text-[0.72rem] font-black text-slate-400 hover:text-slate-600"
+      >
+        {showAll ? '只顯示常用 ▴' : '顯示全部帳戶 ▾'}
+      </button>
+    </div>
   )
 }
 
@@ -1942,6 +2021,7 @@ export function TransactionForm({
   transaction = null,
   returnUrl,
   initialKind: initialKindProp,
+  recentAccountIdsByKind,
 }: Props) {
   const isEditMode = mode === 'edit' && transaction != null
   const initialKind = (isEditMode ? transaction.kind : (initialKindProp ?? 'expense')) as Kind
@@ -2055,6 +2135,23 @@ export function TransactionForm({
     [accounts],
   )
   const reminderAccountOptions = accountOptions
+  const [showAllAccounts, setShowAllAccounts] = useState(false)
+  const frequentAccountIdsByKind = useMemo(() => {
+    const result: Record<Kind, string[]> = {
+      expense: selectFrequentAccountIds('expense', recentAccountIdsByKind, accounts),
+      income: selectFrequentAccountIds('income', recentAccountIdsByKind, accounts),
+      transfer: selectFrequentAccountIds('transfer', recentAccountIdsByKind, accounts),
+      reminder: selectFrequentAccountIds('reminder', recentAccountIdsByKind, accounts),
+    }
+    return result
+  }, [accounts, recentAccountIdsByKind])
+  const buildShortAccountOptions = (frequentIds: string[], extraIds: string[]) => {
+    if (frequentIds.length === 0) return accountOptions
+    const wanted = new Set<string>(frequentIds)
+    for (const id of extraIds) if (id) wanted.add(id)
+    const filtered = accounts.filter((account) => wanted.has(account.id))
+    return buildAccountOptions(filtered)
+  }
   const kindDragStateRef = useRef<{
     active: boolean
     pointerId: number | null
@@ -2987,32 +3084,51 @@ export function TransactionForm({
           </section>
 
           <section className="overflow-hidden bg-white">
-            <TransferAccountRow
-              label="轉出"
-              value={selectedAccount ? formatAccountLabel(selectedAccount) : '選擇轉出帳戶'}
-              selectedValue={resolvedAccountId}
-              onChange={handleTransferSourceChange}
-              options={[{ value: '', label: '選擇轉出帳戶' }, ...accountOptions]}
-            />
-            <div className="flex items-center px-5">
-              <div className="h-px flex-1 bg-[#efebe4]" />
-              <button
-                type="button"
-                onClick={swapTransferAccounts}
-                className="mx-3 flex size-7 shrink-0 items-center justify-center rounded-full border border-[#ece4d8] bg-[#fdf9f4] text-base text-[#d18c11] transition hover:bg-[#fff8e7]"
-                aria-label="交換轉出與轉入帳戶"
-              >
-                ⇅
-              </button>
-              <div className="h-px flex-1 bg-[#efebe4]" />
-            </div>
-            <TransferAccountRow
-              label="轉入"
-              value={selectedToAccount ? formatAccountLabel(selectedToAccount) : '選擇轉入帳戶'}
-              selectedValue={resolvedToAccountId}
-              onChange={handleTransferTargetChange}
-              options={[{ value: '', label: '選擇轉入帳戶' }, ...accountOptions]}
-            />
+            {(() => {
+              const frequentIds = frequentAccountIdsByKind.transfer
+              const transferOptions = showAllAccounts
+                ? accountOptions
+                : buildShortAccountOptions(frequentIds, [resolvedAccountId, resolvedToAccountId])
+              const totalGroupCount = accountOptions.reduce((sum, group) => sum + group.options.length, 0)
+              const shortGroupCount = transferOptions.reduce((sum, group) => sum + group.options.length, 0)
+              const canToggle = totalGroupCount > shortGroupCount || showAllAccounts
+              return (
+                <>
+                  <TransferAccountRow
+                    label="轉出"
+                    value={selectedAccount ? formatAccountLabel(selectedAccount) : '選擇轉出帳戶'}
+                    selectedValue={resolvedAccountId}
+                    onChange={handleTransferSourceChange}
+                    options={[{ value: '', label: '選擇轉出帳戶' }, ...transferOptions]}
+                  />
+                  <div className="flex items-center px-5">
+                    <div className="h-px flex-1 bg-[#efebe4]" />
+                    <button
+                      type="button"
+                      onClick={swapTransferAccounts}
+                      className="mx-3 flex size-7 shrink-0 items-center justify-center rounded-full border border-[#ece4d8] bg-[#fdf9f4] text-base text-[#d18c11] transition hover:bg-[#fff8e7]"
+                      aria-label="交換轉出與轉入帳戶"
+                    >
+                      ⇅
+                    </button>
+                    <div className="h-px flex-1 bg-[#efebe4]" />
+                  </div>
+                  <TransferAccountRow
+                    label="轉入"
+                    value={selectedToAccount ? formatAccountLabel(selectedToAccount) : '選擇轉入帳戶'}
+                    selectedValue={resolvedToAccountId}
+                    onChange={handleTransferTargetChange}
+                    options={[{ value: '', label: '選擇轉入帳戶' }, ...transferOptions]}
+                  />
+                  {canToggle && (
+                    <ShowAllAccountsToggle
+                      showAll={showAllAccounts}
+                      onToggle={() => setShowAllAccounts((value) => !value)}
+                    />
+                  )}
+                </>
+              )
+            })()}
             <div className="mx-5 h-px bg-[#efebe4]" />
             <DateFieldRow value={occurredAt} onChange={setOccurredAt} />
             <div className="mx-5 h-px bg-[#efebe4]" />
@@ -3079,17 +3195,44 @@ export function TransactionForm({
             onOpen={openCategoryPicker}
           />
           <div className="mx-5 h-px bg-[#efebe4]" />
-          <SelectFieldRow
-            tone="bg-[#f0b542]"
-            label={accountFieldLabel(pageKind)}
-            value={selectedAccount ? formatAccountLabel(selectedAccount) : accountFieldPlaceholder(pageKind)}
-            selectedValue={resolvedAccountId}
-            onChange={setAccountId}
-            options={[
-              { value: '', label: accountFieldPlaceholder(pageKind) },
-              ...accountOptions,
-            ]}
-          />
+          {(() => {
+            const frequentIds = frequentAccountIdsByKind[pageKind] ?? []
+            const frequentAccounts = frequentIds
+              .map((id) => accountById.get(id))
+              .filter((account): account is NonNullable<typeof account> => Boolean(account))
+            const shortOptions = showAllAccounts
+              ? accountOptions
+              : buildShortAccountOptions(frequentIds, [resolvedAccountId])
+            const totalGroupCount = accountOptions.reduce((sum, group) => sum + group.options.length, 0)
+            const shortGroupCount = shortOptions.reduce((sum, group) => sum + group.options.length, 0)
+            const canToggle = totalGroupCount > shortGroupCount || showAllAccounts
+            return (
+              <>
+                <AccountChipRow
+                  accounts={frequentAccounts}
+                  selectedId={resolvedAccountId}
+                  onSelect={(id) => setAccountId(id)}
+                />
+                <SelectFieldRow
+                  tone="bg-[#f0b542]"
+                  label={accountFieldLabel(pageKind)}
+                  value={selectedAccount ? formatAccountLabel(selectedAccount) : accountFieldPlaceholder(pageKind)}
+                  selectedValue={resolvedAccountId}
+                  onChange={setAccountId}
+                  options={[
+                    { value: '', label: accountFieldPlaceholder(pageKind) },
+                    ...shortOptions,
+                  ]}
+                />
+                {canToggle && (
+                  <ShowAllAccountsToggle
+                    showAll={showAllAccounts}
+                    onToggle={() => setShowAllAccounts((value) => !value)}
+                  />
+                )}
+              </>
+            )
+          })()}
 
           <div className="mx-5 h-px bg-[#efebe4]" />
           <DateFieldRow value={occurredAt} onChange={setOccurredAt} />

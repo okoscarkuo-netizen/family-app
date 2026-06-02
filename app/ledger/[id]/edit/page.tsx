@@ -5,6 +5,7 @@ import {
   getAllCategories,
   getAllMerchants,
   getMerchantGroups,
+  getRecentAccountIdsByKind,
   getTransactionById,
 } from '@/lib/family-transactions'
 import { getTwdRateTable } from '@/lib/exchange-rates'
@@ -14,18 +15,18 @@ import { shellBackgroundClass } from '@/components/PageShell'
 import type { FamilyAccount } from '@/lib/finance/types'
 
 async function getActiveAccounts(): Promise<
-  Pick<FamilyAccount, 'id' | 'name' | 'currency' | 'kind' | 'balance' | 'owner' | 'shared' | 'type'>[]
+  Pick<FamilyAccount, 'id' | 'name' | 'currency' | 'kind' | 'balance' | 'owner' | 'shared' | 'type' | 'favorite'>[]
 > {
   const supabase = createAdminClient()
   if (!supabase) return []
   const { data } = await supabase
     .from('family_accounts')
-    .select('id, name, currency, kind, balance, owner, shared, type')
+    .select('id, name, currency, kind, balance, owner, shared, type, favorite')
     .eq('is_archived', false)
     .order('sort_order')
   return (data ?? []) as Pick<
     FamilyAccount,
-    'id' | 'name' | 'currency' | 'kind' | 'balance' | 'owner' | 'shared' | 'type'
+    'id' | 'name' | 'currency' | 'kind' | 'balance' | 'owner' | 'shared' | 'type' | 'favorite'
   >[]
 }
 
@@ -46,12 +47,13 @@ export default async function EditTransactionPage({ params, searchParams }: Page
   const transaction = await getTransactionById(decodeURIComponent(id))
   if (!transaction) notFound()
 
-  const [accounts, categories, merchants, merchantGroups, rateTable] = await Promise.all([
+  const [accounts, categories, merchants, merchantGroups, rateTable, recentAccountIdsByKind] = await Promise.all([
     getActiveAccounts(),
     getAllCategories(),
     getAllMerchants(),
     getMerchantGroups(),
     getTwdRateTable(),
+    getRecentAccountIdsByKind(),
   ])
 
   return (
@@ -81,6 +83,7 @@ export default async function EditTransactionPage({ params, searchParams }: Page
             mode="edit"
             transaction={transaction}
             returnUrl={from}
+            recentAccountIdsByKind={recentAccountIdsByKind}
           />
         </section>
       </main>

@@ -367,6 +367,60 @@ export async function getLatestTransactionPreset(): Promise<TransactionFormPrese
   }
 }
 
+export type RecentAccountIdsByKind = Record<TransactionKind, string[]>
+
+export async function getRecentAccountIdsByKind(options?: {
+  days?: number
+  limit?: number
+}): Promise<RecentAccountIdsByKind> {
+  const empty: RecentAccountIdsByKind = { expense: [], income: [], transfer: [] }
+  const supabase = createAdminClient()
+  if (!supabase) return empty
+
+  const days = options?.days ?? 30
+  const limit = options?.limit ?? 5
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
+
+  const { data, error } = await supabase
+    .from('family_transactions')
+    .select('kind, account_id, to_account_id')
+    .gte('occurred_at', since)
+
+  if (error) {
+    console.error('[getRecentAccountIdsByKind] failed', error)
+    return empty
+  }
+
+  const tally: Record<TransactionKind, Map<string, number>> = {
+    expense: new Map(),
+    income: new Map(),
+    transfer: new Map(),
+  }
+
+  for (const row of data ?? []) {
+    const kind = row.kind as TransactionKind
+    if (!tally[kind]) continue
+    const bump = (id: string | null) => {
+      if (!id) return
+      tally[kind].set(id, (tally[kind].get(id) ?? 0) + 1)
+    }
+    bump(row.account_id)
+    if (kind === 'transfer') bump(row.to_account_id)
+  }
+
+  const pickTop = (map: Map<string, number>) =>
+    [...map.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, limit)
+      .map(([id]) => id)
+
+  return {
+    expense: pickTop(tally.expense),
+    income: pickTop(tally.income),
+    transfer: pickTop(tally.transfer),
+  }
+}
+
 async function attachCategoryPaths(transactions: FamilyTransaction[]): Promise<FamilyTransaction[]> {
   if (transactions.length === 0) return transactions
 

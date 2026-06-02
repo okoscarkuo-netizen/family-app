@@ -4,6 +4,7 @@ import {
   getAllMerchants,
   getLatestTransactionPreset,
   getMerchantGroups,
+  getRecentAccountIdsByKind,
 } from '@/lib/family-transactions'
 import { getTwdRateTable } from '@/lib/exchange-rates'
 import { TransactionForm } from '@/app/ledger/_components/TransactionForm'
@@ -35,13 +36,14 @@ export default async function NewTransactionPage({
   const params = await searchParams
   const initialKind = params.kind === 'reminder' ? 'reminder' : undefined
 
-  const [accounts, categories, merchants, merchantGroups, latestPreset, rateTable] = await Promise.all([
+  const [accounts, categories, merchants, merchantGroups, latestPreset, rateTable, recentAccountIdsByKind] = await Promise.all([
     getActiveAccounts(),
     getAllCategories(),
     getAllMerchants(),
     getMerchantGroups(),
     getLatestTransactionPreset(),
     getTwdRateTable(),
+    getRecentAccountIdsByKind(),
   ])
 
   return (
@@ -56,6 +58,7 @@ export default async function NewTransactionPage({
             initialPreset={latestPreset}
             rateTable={rateTable}
             initialKind={initialKind}
+            recentAccountIdsByKind={recentAccountIdsByKind}
           />
         </section>
       </main>

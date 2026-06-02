@@ -21,6 +21,7 @@
 
 | 日期 時間 | 工具 | 分支 | 做什麼 | 狀態 |
 |---|---|---|---|---|
+| 2026-06-02 00:10 | Claude | feat/app-smoothness | 記帳表單帳戶選擇器：上方加「最近用過/常用」chip 列（5 個，按 kind 分開記憶 30 天內最常用），原生選單預設只塞常用，下方有「顯示全部帳戶」切換。tsc/lint/build 全綠，未 commit | 進行中 |
 | 2026-06-01 11:25 | Claude | feat/app-smoothness → main | /merchants 商家管理頁的兩個原生 `<select>`（iOS 滾輪 picker）改成底部 sheet + 4-grid（GroupPickerSheet）。dda3b48 已推到 origin/main | 完成 |
 | 2026-06-01 11:05 | Claude | main ← feat/app-smoothness | 合併 feat/app-smoothness 進 main 並推上去（讓 Vercel 自動部 production，修復商家選擇器舊版顯示）。merge commit 03012d9 已 push 到 origin/main，等 Vercel 自動 build | 完成 |
 | 2026-06-01 11:30 | Claude | feat/app-smoothness | 建立 session log + 加入多 session 協作規則進 core_rules.md | 完成 |
