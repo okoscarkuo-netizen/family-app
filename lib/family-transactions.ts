@@ -378,7 +378,7 @@ export async function getRecentAccountIdsByKind(options?: {
   if (!supabase) return empty
 
   const days = options?.days ?? 30
-  const limit = options?.limit ?? 5
+  const limit = options?.limit ?? 10
   const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString()
 
   const { data, error } = await supabase

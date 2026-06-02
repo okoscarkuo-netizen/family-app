@@ -186,7 +186,7 @@ function selectFrequentAccountIds(
   pageKind: Kind,
   recentByKind: RecentAccountIdsByKind | undefined,
   accounts: Pick<FamilyAccount, 'id' | 'favorite'>[],
-  limit = 5,
+  limit = 10,
 ): string[] {
   const dbKind = pageKindToDbKind(pageKind)
   const recent = recentByKind?.[dbKind] ?? []
@@ -442,40 +442,6 @@ function SelectFieldRow({
         )}
       </select>
     </label>
-  )
-}
-
-function AccountChipRow({
-  accounts,
-  selectedId,
-  onSelect,
-}: {
-  accounts: Pick<FamilyAccount, 'id' | 'name' | 'currency' | 'favorite'>[]
-  selectedId: string
-  onSelect: (id: string) => void
-}) {
-  if (accounts.length < 2) return null
-  return (
-    <div className="flex flex-wrap gap-1.5 px-5 pb-2 pt-2">
-      {accounts.map((account) => {
-        const active = selectedId === account.id
-        return (
-          <button
-            key={account.id}
-            type="button"
-            onClick={() => onSelect(account.id)}
-            className={`rounded-full px-3 py-1.5 text-xs font-black transition ${
-              active
-                ? 'bg-[#f0b542] text-white shadow-[0_4px_10px_rgba(240,181,66,0.35)]'
-                : 'bg-[#fff5dc] text-[#a86a07] hover:bg-[#ffeec5]'
-            }`}
-          >
-            {account.name}
-            {account.favorite ? ' ★' : ''}
-          </button>
-        )
-      })}
-    </div>
   )
 }
 
@@ -3205,9 +3171,6 @@ export function TransactionForm({
           <div className="mx-5 h-px bg-[#efebe4]" />
           {(() => {
             const frequentIds = frequentAccountIdsByKind[pageKind] ?? []
-            const frequentAccounts = frequentIds
-              .map((id) => accountById.get(id))
-              .filter((account): account is NonNullable<typeof account> => Boolean(account))
             const shortOptions = showAllAccounts
               ? accountOptions
               : buildShortAccountOptions(frequentIds, [resolvedAccountId])
@@ -3216,11 +3179,6 @@ export function TransactionForm({
             const canToggle = totalGroupCount > shortGroupCount || showAllAccounts
             return (
               <>
-                <AccountChipRow
-                  accounts={frequentAccounts}
-                  selectedId={resolvedAccountId}
-                  onSelect={handleAccountChange}
-                />
                 <SelectFieldRow
                   tone="bg-[#f0b542]"
                   label={accountFieldLabel(pageKind)}
