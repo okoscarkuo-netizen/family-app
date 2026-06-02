@@ -21,6 +21,7 @@
 
 | 日期 時間 | 工具 | 分支 | 做什麼 | 狀態 |
 |---|---|---|---|---|
+| 2026-06-02 01:00 | Codex | feat/app-smoothness | 套用 recurring migration 到 Supabase production | 完成 |
 | 2026-06-02 00:27 | Codex | feat/app-smoothness | 檢查詳情頁週期欄位是否需要套 Supabase migration，並修正週期 migration 帳戶欄位型別 | 完成 |
 | 2026-06-02 00:27 | Codex | feat/app-smoothness | 新增流水交易詳情頁：可改商家/帳戶/備註/週期，並提供編輯、複製、刪除 | 完成 |
 | 2026-06-02 00:50 | Claude | feat/app-smoothness → main | 拿掉 chip 列、輪盤改最近 10 個常用（仍按 Oscar/Livia/共通 分組）。`AccountChipRow` 元件已刪 | 完成 |
