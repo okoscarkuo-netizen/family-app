@@ -198,7 +198,7 @@ export function TransactionList({
               return (
                 <Link
                   key={tx.id}
-                  href={`/ledger/${encodeURIComponent(tx.id)}/edit${returnUrl ? `?from=${encodeURIComponent(returnUrl)}` : ''}`}
+                  href={`/ledger/${encodeURIComponent(tx.id)}${returnUrl ? `?from=${encodeURIComponent(returnUrl)}` : ''}`}
                   className="group flex items-start gap-2.5 px-4 py-1.5 transition hover:bg-[#fafaf8] active:bg-[#f4f4f2]"
                   aria-label={`查看 ${getTransactionTitle(tx, accountNames)}`}
                 >

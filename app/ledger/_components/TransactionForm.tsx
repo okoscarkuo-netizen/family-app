@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import type { KeyboardEvent, PointerEvent } from 'react'
 import { useRouter } from 'next/navigation'
@@ -95,6 +95,8 @@ type Props = {
   rateTable?: TwdRateTable | null
   mode?: 'create' | 'edit'
   transaction?: FamilyTransaction | null
+  copyTransaction?: FamilyTransaction | null
+  copyRecurringFrequency?: 'weekly' | 'monthly' | 'quarterly' | 'yearly' | null
   returnUrl?: string
   initialKind?: Kind
   recentAccountIdsByKind?: RecentAccountIdsByKind
@@ -151,6 +153,18 @@ function getAccountGroupLabel(account: Pick<FamilyAccount, 'owner' | 'shared'>) 
 function isInteractiveElement(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false
   return Boolean(target.closest('button,a,input,select,textarea,label,[role="button"]'))
+}
+
+function useHasMounted() {
+  return useSyncExternalStore(
+    (notify) => {
+      if (typeof window === 'undefined') return () => {}
+      const id = window.setTimeout(notify, 0)
+      return () => window.clearTimeout(id)
+    },
+    () => true,
+    () => false,
+  )
 }
 
 function buildAccountOptions(
@@ -787,8 +801,9 @@ function CategoryPickerSheet({
 
   const activeGroup = groups.find((group) => group.parent.id === activeParentId) ?? groups[0] ?? null
   const children = activeGroup?.children ?? []
+  const mounted = useHasMounted()
 
-  if (typeof document === 'undefined') return null
+  if (!mounted) return null
 
   function handlePickChild(childId: string) {
     if (activeGroup && activeGroup.parent.id !== selectedParentId) {
@@ -1000,6 +1015,7 @@ function MerchantPickerSheet({
         .sort((a, b) => a.name.localeCompare(b.name, 'zh-TW'))
     : selectedGroup?.merchants ?? []
   const canUseTypedValue = normalizedValue.length > 0 && !selectedMerchant
+  const mounted = useHasMounted()
 
   function handlePickMerchant(name: string) {
     onChange(name.trim())
@@ -1011,7 +1027,7 @@ function MerchantPickerSheet({
     onClose()
   }
 
-  if (typeof document === 'undefined') return null
+  if (!mounted) return null
 
   return createPortal(
     <div
@@ -1556,8 +1572,9 @@ function MerchantManagerSheet({
     setEditingMerchantName(merchant.name)
     setNotice(null)
   }
+  const mounted = useHasMounted()
 
-  if (typeof document === 'undefined') return null
+  if (!mounted) return null
 
   return createPortal(
     <div
@@ -1985,18 +2002,22 @@ export function TransactionForm({
   rateTable,
   mode = 'create',
   transaction = null,
+  copyTransaction = null,
+  copyRecurringFrequency = null,
   returnUrl,
   initialKind: initialKindProp,
   recentAccountIdsByKind,
 }: Props) {
   const isEditMode = mode === 'edit' && transaction != null
-  const initialKind = (isEditMode ? transaction.kind : (initialKindProp ?? 'expense')) as Kind
+  const seedTransaction = isEditMode ? transaction : copyTransaction
+  const isCopyMode = !isEditMode && seedTransaction != null
+  const initialKind = (seedTransaction ? seedTransaction.kind : (initialKindProp ?? 'expense')) as Kind
   const initialCategorySelection =
     initialKind === 'reminder'
       ? { parentId: '', categoryId: '' }
       : resolveCategorySelection(
           buildCategoryPickerGroups(categories, initialKind),
-          isEditMode ? transaction.category_id : initialPreset?.categoryId,
+          seedTransaction ? seedTransaction.category_id : initialPreset?.categoryId,
         )
   const formRef = useRef<HTMLFormElement>(null)
   const kindCarouselRef = useRef<HTMLDivElement>(null)
@@ -2012,14 +2033,15 @@ export function TransactionForm({
   const submittedRef = useRef(false)
   const prevAmountRef = useRef('')
   const prevReminderTitleRef = useRef('')
-  const [amount, setAmount] = useState(isEditMode ? String(Number(transaction.amount)) : '')
+  const initialAmount = seedTransaction ? String(Number(seedTransaction.amount)) : ''
+  const [amount, setAmount] = useState(initialAmount)
   const [transferTargetAmount, setTransferTargetAmount] = useState(
-    isEditMode && initialKind === 'transfer'
-      ? String(Number(transaction.transfer_target_amount ?? transaction.amount))
+    seedTransaction && initialKind === 'transfer'
+      ? String(Number(seedTransaction.transfer_target_amount ?? seedTransaction.amount))
       : '',
   )
   const [activeTransferAmountSide, setActiveTransferAmountSide] = useState<TransferAmountSide>('source')
-  const [isKeypadVisible, setIsKeypadVisible] = useState(true)
+  const [isKeypadVisible, setIsKeypadVisible] = useState(!isCopyMode)
   const [isCategoryPickerOpen, setIsCategoryPickerOpen] = useState(false)
   const [isMerchantPickerOpen, setIsMerchantPickerOpen] = useState(false)
   const [isMerchantManagerOpen, setIsMerchantManagerOpen] = useState(false)
@@ -2028,12 +2050,12 @@ export function TransactionForm({
   const [managedMerchants, setManagedMerchants] = useState(() => merchants)
   const [managedMerchantGroups, setManagedMerchantGroups] = useState(() => merchantGroups)
   const [currency, setCurrency] = useState<Currency>(() => {
-    const fallbackCurrency = isCurrency(isEditMode ? transaction.currency : initialPreset?.currency)
-      ? (isEditMode ? transaction.currency : initialPreset?.currency) as Currency
+    const fallbackCurrency = isCurrency(seedTransaction ? seedTransaction.currency : initialPreset?.currency)
+      ? (seedTransaction ? seedTransaction.currency : initialPreset?.currency) as Currency
       : 'TWD'
 
     if (initialKind === 'transfer') {
-      const initialSourceId = isEditMode ? transaction.account_id ?? '' : initialPreset?.accountId ?? ''
+      const initialSourceId = seedTransaction ? seedTransaction.account_id ?? '' : initialPreset?.accountId ?? ''
       const initialSourceAccount = accounts.find((account) => account.id === initialSourceId)
       if (initialSourceAccount && isCurrency(initialSourceAccount.currency)) {
         return initialSourceAccount.currency as Currency
@@ -2043,22 +2065,22 @@ export function TransactionForm({
     return fallbackCurrency
   })
   const [categoryId, setCategoryId] = useState(initialCategorySelection.categoryId)
-  const [accountId, setAccountId] = useState(isEditMode ? transaction.account_id ?? '' : initialPreset?.accountId ?? '')
-  const [toAccountId, setToAccountId] = useState(isEditMode ? transaction.to_account_id ?? '' : initialPreset?.toAccountId ?? '')
-  const [merchant, setMerchant] = useState(isEditMode ? transaction.merchant ?? '' : '')
-  const [occurredAt, setOccurredAt] = useState(isEditMode ? toLocalDateTimeValue(transaction.occurred_at ?? transaction.created_at) : currentLocalDateTimeValue)
-  const [reminderTitle, setReminderTitle] = useState(isEditMode ? transaction.title ?? '' : '')
+  const [accountId, setAccountId] = useState(seedTransaction ? seedTransaction.account_id ?? '' : initialPreset?.accountId ?? '')
+  const [toAccountId, setToAccountId] = useState(seedTransaction ? seedTransaction.to_account_id ?? '' : initialPreset?.toAccountId ?? '')
+  const [merchant, setMerchant] = useState(seedTransaction ? seedTransaction.merchant ?? '' : '')
+  const [occurredAt, setOccurredAt] = useState(seedTransaction ? toLocalDateTimeValue(seedTransaction.occurred_at ?? seedTransaction.created_at) : currentLocalDateTimeValue)
+  const [reminderTitle, setReminderTitle] = useState(seedTransaction ? seedTransaction.title ?? '' : '')
   const [reminderCategory, setReminderCategory] = useState<ReminderCategory>('其他')
   const [reminderFrequency, setReminderFrequency] = useState<ReminderFrequency>('quarterly')
   const [reminderDueOn, setReminderDueOn] = useState(currentLocalDateValue)
   const [owner, setOwner] = useState<Owner>(
-    isOwner(isEditMode ? transaction.owner : initialPreset?.owner)
-      ? (isEditMode ? transaction.owner : initialPreset?.owner) as Owner
+    isOwner(seedTransaction ? seedTransaction.owner : initialPreset?.owner)
+      ? (seedTransaction ? seedTransaction.owner : initialPreset?.owner) as Owner
       : 'Oscar',
   )
-  const [note, setNote] = useState(isEditMode ? transaction.note ?? '' : '')
-  const [recurringOn, setRecurringOn] = useState(false)
-  const [recurringFrequency, setRecurringFrequency] = useState<'weekly' | 'monthly' | 'quarterly' | 'yearly'>('monthly')
+  const [note, setNote] = useState(seedTransaction ? seedTransaction.note ?? '' : '')
+  const [recurringOn, setRecurringOn] = useState(isCopyMode && copyRecurringFrequency != null)
+  const [recurringFrequency, setRecurringFrequency] = useState<'weekly' | 'monthly' | 'quarterly' | 'yearly'>(copyRecurringFrequency ?? 'monthly')
   const [recurringEndType, setRecurringEndType] = useState<'forever' | 'count'>('forever')
   const [recurringEndCount, setRecurringEndCount] = useState<number>(12)
   const [message, setMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)

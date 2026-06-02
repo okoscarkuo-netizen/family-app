@@ -94,6 +94,7 @@ export default async function LedgerPage({ searchParams }: PageProps) {
             transactions={visibleTransactions}
             accounts={allAccounts}
             currentAccountId={accountId}
+            returnUrl={buildLedgerReturnHref(params)}
             totalCount={transactions.length}
             loadMoreHref={loadMoreHref}
           />
@@ -121,6 +122,15 @@ function buildLedgerLoadMoreHref(
   }
   next.set('take', String(take))
   return `/ledger?${next.toString()}`
+}
+
+function buildLedgerReturnHref(params: Awaited<PageProps['searchParams']>) {
+  const next = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value) next.set(key, value)
+  }
+  const query = next.toString()
+  return query ? `/ledger?${query}` : '/ledger'
 }
 
 function formatDate(date: Date) {

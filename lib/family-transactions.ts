@@ -1,5 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 
+let transactionRecurringColumnSupported: boolean | null = null
+
 export type TransactionKind = 'income' | 'expense' | 'transfer'
 export type TransactionOwner = 'Oscar' | 'Livia'
 
@@ -37,6 +39,7 @@ export type FamilyTransaction = {
   occurred_on: string
   note: string | null
   created_at: string
+  recurring_id?: string | null
   category?: Pick<FamilyCategory, 'id' | 'name' | 'kind' | 'parent_id' | 'icon'> | null
   categoryPath?: string | null
 }
@@ -98,6 +101,24 @@ export type MerchantPickerGroup = {
 }
 
 export const UNASSIGNED_MERCHANT_GROUP_ID = '__unassigned__'
+
+async function probeTransactionColumn(column: string): Promise<boolean> {
+  const supabase = createAdminClient()
+  if (!supabase) return false
+  const { error } = await supabase.from('family_transactions').select(column).limit(1)
+  if (error) {
+    if (error.code === '42703' || error.code === 'PGRST204') return false
+    console.error(`[family-transactions] probe column ${column} failed:`, error)
+    return false
+  }
+  return true
+}
+
+export async function supportsTransactionRecurringColumn(): Promise<boolean> {
+  if (transactionRecurringColumnSupported !== null) return transactionRecurringColumnSupported
+  transactionRecurringColumnSupported = await probeTransactionColumn('recurring_id')
+  return transactionRecurringColumnSupported
+}
 
 function compareCategories(a: FamilyCategory, b: FamilyCategory) {
   if (a.sort_order !== b.sort_order) {
