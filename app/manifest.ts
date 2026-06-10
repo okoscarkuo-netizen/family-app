@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "家庭中控",
     short_name: "家庭中控",
     description: "家庭記帳、待辦事項、帳單提醒、保養提醒與雲端同步。",
-    start_url: "/",
+    start_url: "/ledger/new",
     scope: "/",
     display: "standalone",
     background_color: "#fff45f",
