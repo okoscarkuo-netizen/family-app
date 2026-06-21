@@ -28,6 +28,30 @@ const VALID_CATEGORIES = new Set([
   '車子', '房屋', '帳單', '家事', '其他',
 ])
 
+let householdIdColumnSupported: boolean | null = null
+let createdByColumnSupported: boolean | null = null
+
+async function probeColumn(supabase: AdminClient, column: string): Promise<boolean> {
+  const { error } = await supabase.from('maintenance_reminders').select(column).limit(1)
+  if (error) {
+    if (error.code === '42703' || error.code === 'PGRST204') return false
+    throw new Error(error.message)
+  }
+  return true
+}
+
+async function supportsHouseholdIdColumn(supabase: AdminClient): Promise<boolean> {
+  if (householdIdColumnSupported !== null) return householdIdColumnSupported
+  householdIdColumnSupported = await probeColumn(supabase, 'household_id')
+  return householdIdColumnSupported
+}
+
+async function supportsCreatedByColumn(supabase: AdminClient): Promise<boolean> {
+  if (createdByColumnSupported !== null) return createdByColumnSupported
+  createdByColumnSupported = await probeColumn(supabase, 'created_by')
+  return createdByColumnSupported
+}
+
 function str(val: FormDataEntryValue | null): string {
   return val ? String(val).trim() : ''
 }
@@ -104,11 +128,19 @@ export async function createMaintenanceReminder(
     if (!account) return fail('找不到該帳戶，請重新選擇。')
   }
 
-  const householdId = await ensureDefaultHouseholdId(supabase, user)
+  let supportsHouseholdId: boolean
+  let supportsCreatedBy: boolean
+  try {
+    [supportsHouseholdId, supportsCreatedBy] = await Promise.all([
+      supportsHouseholdIdColumn(supabase),
+      supportsCreatedByColumn(supabase),
+    ])
+  } catch (error) {
+    console.error('probe reminder columns error:', error)
+    return fail('資料庫連線目前不可用，請稍後再試。')
+  }
 
-  const { error } = await supabase.from('maintenance_reminders').insert({
-    household_id: householdId,
-    created_by: user.id,
+  const payload: Record<string, string | null> = {
     account_id: accountIdRaw,
     name,
     category,
@@ -116,7 +148,16 @@ export async function createMaintenanceReminder(
     due_on: dueOn,
     frequency,
     completed_at: null,
-  })
+  }
+
+  if (supportsHouseholdId) {
+    payload.household_id = await ensureDefaultHouseholdId(supabase, user)
+  }
+  if (supportsCreatedBy) {
+    payload.created_by = user.id
+  }
+
+  const { error } = await supabase.from('maintenance_reminders').insert(payload)
 
   if (error) return fail(error.message)
 
