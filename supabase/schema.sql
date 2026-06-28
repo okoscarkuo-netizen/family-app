@@ -65,6 +65,17 @@ create table public.maintenance_reminders (
   due_on date,
   mileage_due integer,
   completed_at timestamptz,
+  is_paused boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+create table public.maintenance_records (
+  id uuid primary key default gen_random_uuid(),
+  household_id uuid not null references public.households(id) on delete cascade,
+  reminder_id uuid not null references public.maintenance_reminders(id) on delete cascade,
+  created_by uuid not null references auth.users(id) on delete cascade,
+  completed_on date not null,
+  note text,
   created_at timestamptz not null default now()
 );
 
@@ -136,10 +147,17 @@ for each row execute function public.set_updated_at();
 
 alter table public.maintenance_reminders
   add column if not exists account_id text references public.family_accounts(id) on delete set null,
-  add column if not exists frequency reminder_frequency not null default 'quarterly';
+  add column if not exists frequency reminder_frequency not null default 'quarterly',
+  add column if not exists is_paused boolean not null default false;
 
 create index if not exists maintenance_reminders_account_idx
   on public.maintenance_reminders (account_id);
+
+create index if not exists maintenance_records_reminder_completed_idx
+  on public.maintenance_records (reminder_id, completed_on desc, created_at desc);
+
+create index if not exists maintenance_records_household_completed_idx
+  on public.maintenance_records (household_id, completed_on desc, created_at desc);
 
 create table if not exists public.family_ledger_entries (
   id uuid primary key default gen_random_uuid(),
@@ -362,6 +380,7 @@ alter table public.transactions enable row level security;
 alter table public.todos enable row level security;
 alter table public.bill_reminders enable row level security;
 alter table public.maintenance_reminders enable row level security;
+alter table public.maintenance_records enable row level security;
 alter table public.household_dashboard_state enable row level security;
 alter table public.exchange_rate_snapshots enable row level security;
 alter table public.family_accounts enable row level security;
@@ -449,6 +468,17 @@ create policy "members can manage maintenance reminders"
     exists (
       select 1 from public.household_members
       where household_members.household_id = maintenance_reminders.household_id
+        and household_members.user_id = auth.uid()
+    )
+  )
+  with check (created_by = auth.uid());
+
+create policy "members can manage maintenance records"
+  on public.maintenance_records for all
+  using (
+    exists (
+      select 1 from public.household_members
+      where household_members.household_id = maintenance_records.household_id
         and household_members.user_id = auth.uid()
     )
   )

@@ -4,6 +4,7 @@ import {
   getTransferDisplayAmounts,
   type FamilyTransaction,
 } from '@/lib/family-transactions'
+import type { MaintenanceRecord } from '@/lib/reminders-db'
 import { softSurfaceClass } from '@/components/PageShell'
 import { getCategoryDisplayIcon } from '@/lib/category-icons'
 import { CategoryIcon } from '@/components/CategoryIcon'
@@ -20,6 +21,12 @@ const KIND_LABEL: Record<FamilyTransaction['kind'], string> = {
   expense: '支出',
   income: '收入',
   transfer: '轉帳',
+}
+
+export type LedgerListItem = FamilyTransaction | MaintenanceRecord
+
+function isMaintenanceRecord(item: LedgerListItem): item is MaintenanceRecord {
+  return 'type' in item && item.type === 'maintenance'
 }
 
 function amountClass(kind: FamilyTransaction['kind']) {
@@ -45,14 +52,14 @@ function formatTransferMoney(value: number, currency: string): string {
   return currency === 'TWD' ? `NT$${Math.abs(value).toLocaleString('zh-TW', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : amount
 }
 
-function groupByDate(transactions: FamilyTransaction[]): Array<{ date: string; items: FamilyTransaction[] }> {
-  const map = new Map<string, FamilyTransaction[]>()
-  for (const tx of transactions) {
-    const existing = map.get(tx.occurred_on)
+function groupByDate(items: LedgerListItem[]): Array<{ date: string; items: LedgerListItem[] }> {
+  const map = new Map<string, LedgerListItem[]>()
+  for (const item of items) {
+    const existing = map.get(item.occurred_on)
     if (existing) {
-      existing.push(tx)
+      existing.push(item)
     } else {
-      map.set(tx.occurred_on, [tx])
+      map.set(item.occurred_on, [item])
     }
   }
   return Array.from(map.entries()).map(([date, items]) => ({ date, items }))
@@ -66,8 +73,8 @@ function formatDateParts(dateStr: string) {
   }
 }
 
-function formatTime(tx: FamilyTransaction): string {
-  const value = tx.occurred_at ?? tx.created_at
+function formatTime(item: LedgerListItem): string {
+  const value = isMaintenanceRecord(item) ? item.created_at : (item.occurred_at ?? item.created_at)
   const d = new Date(value)
   if (Number.isNaN(d.getTime())) return ''
 
@@ -83,7 +90,10 @@ function getAccountName(accountId: string | null | undefined, accountNames: Map<
   return accountNames.get(accountId) ?? null
 }
 
-function getTransactionTitle(tx: FamilyTransaction, accountNames: Map<string, string>) {
+function getTransactionTitle(item: LedgerListItem, accountNames: Map<string, string>) {
+  if (isMaintenanceRecord(item)) return item.name
+
+  const tx = item
   if (tx.kind === 'transfer') {
     const from = getAccountName(tx.account_id, accountNames)
     const to = getAccountName(tx.to_account_id, accountNames)
@@ -95,7 +105,17 @@ function getTransactionTitle(tx: FamilyTransaction, accountNames: Map<string, st
   return tx.categoryPath || tx.category?.name || tx.merchant || tx.title || KIND_LABEL[tx.kind]
 }
 
-function getDetailLine(tx: FamilyTransaction, currentAccountId?: string) {
+function getDetailLine(item: LedgerListItem, currentAccountId?: string) {
+  if (isMaintenanceRecord(item)) {
+    const parts = [
+      item.accountName,
+      item.note?.trim() || null,
+    ].filter(Boolean)
+
+    return parts.length > 0 ? parts.join(' · ') : null
+  }
+
+  const tx = item
   const note = tx.note?.trim()
 
   if (tx.kind === 'transfer') {
@@ -125,23 +145,41 @@ function getDetailLine(tx: FamilyTransaction, currentAccountId?: string) {
   return parts.length > 0 ? parts.join(' · ') : null
 }
 
-function getMetaLine(tx: FamilyTransaction, accountNames: Map<string, string>) {
+function getMetaLine(item: LedgerListItem, accountNames: Map<string, string>) {
+  if (isMaintenanceRecord(item)) {
+    const time = formatTime(item)
+    const frequencyLabel =
+      item.frequency === 'once' ? '一次' :
+      item.frequency === 'weekly' ? '每週' :
+      item.frequency === 'monthly' ? '每月' :
+      item.frequency === 'quarterly' ? '每三個月' :
+      '每年'
+    const parts = [time, '保養', frequencyLabel].filter(Boolean)
+    return parts.join(' · ')
+  }
+
+  const tx = item
   const time = formatTime(tx)
   const account = getAccountName(tx.account_id, accountNames)
   const parts = [time, account, tx.owner].filter(Boolean)
   return parts.join(' · ')
 }
 
-function getTransactionIcon(tx: FamilyTransaction) {
+function getTransactionIcon(item: LedgerListItem) {
+  if (isMaintenanceRecord(item)) return '養'
+
+  const tx = item
   if (tx.category) return getCategoryDisplayIcon(tx.category)
   if (tx.kind === 'transfer') return '轉'
   if (tx.kind === 'income') return '入'
   return '出'
 }
 
-function getDaySummary(items: FamilyTransaction[]) {
+function getDaySummary(items: LedgerListItem[]) {
   return items.reduce(
-    (summary, tx) => {
+    (summary, item) => {
+      if (isMaintenanceRecord(item)) return summary
+      const tx = item
       if (tx.kind === 'income') {
         summary.income += Math.abs(tx.amount)
       }
@@ -155,7 +193,7 @@ function getDaySummary(items: FamilyTransaction[]) {
 }
 
 type Props = {
-  transactions: FamilyTransaction[]
+  transactions: LedgerListItem[]
   accounts: LedgerAccount[]
   currentAccountId?: string
   returnUrl?: string
@@ -194,15 +232,19 @@ export function TransactionList({
             {items.map((tx) => {
               const detailLine = getDetailLine(tx, currentAccountId)
               const metaLine = getMetaLine(tx, accountNames)
+              const isMaintenance = isMaintenanceRecord(tx)
+              const href = isMaintenance
+                ? '/reminders'
+                : `/ledger/${encodeURIComponent(tx.id)}${returnUrl ? `?from=${encodeURIComponent(returnUrl)}` : ''}`
 
               return (
                 <Link
                   key={tx.id}
-                  href={`/ledger/${encodeURIComponent(tx.id)}${returnUrl ? `?from=${encodeURIComponent(returnUrl)}` : ''}`}
+                  href={href}
                   className="group flex items-start gap-2.5 px-4 py-1.5 transition hover:bg-[#fafaf8] active:bg-[#f4f4f2]"
-                  aria-label={`查看 ${getTransactionTitle(tx, accountNames)}`}
+                  aria-label={isMaintenance ? `查看保養 ${getTransactionTitle(tx, accountNames)}` : `查看 ${getTransactionTitle(tx, accountNames)}`}
                 >
-                  {tx.category ? (
+                  {!isMaintenance && tx.category ? (
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden" aria-hidden="true">
                       <CategoryIcon icon={getCategoryDisplayIcon(tx.category)} size={40} />
                     </div>
@@ -232,7 +274,16 @@ export function TransactionList({
                   </div>
 
                   <div className="flex w-[6.1rem] shrink-0 flex-col items-end text-right">
-                    {tx.kind === 'transfer' ? (() => {
+                    {isMaintenance ? (
+                      <>
+                        <div className="rounded-full bg-[#edf8f4] px-2.5 py-1 text-[0.68rem] font-black text-[#356f5f]">
+                          保養
+                        </div>
+                        <div className="mt-1 whitespace-nowrap text-[0.68rem] font-semibold text-[#a8adb3]">
+                          無金額
+                        </div>
+                      </>
+                    ) : tx.kind === 'transfer' ? (() => {
                       const transfer = getTransferDisplayAmounts(tx)
                       const primary = formatTransferMoney(transfer.sourceAmount, transfer.sourceCurrency)
                       if (!transfer.isCrossCurrency) {
@@ -277,7 +328,7 @@ export function TransactionList({
   )
 }
 
-function DayHeader({ date, items }: { date: string; items: FamilyTransaction[] }) {
+function DayHeader({ date, items }: { date: string; items: LedgerListItem[] }) {
   const { day, context } = formatDateParts(date)
   const { income, expense } = getDaySummary(items)
   const balance = income - expense

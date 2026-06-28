@@ -1,6 +1,8 @@
 import { getTransactions } from '@/lib/family-transactions'
+import { getMaintenanceRecords } from '@/lib/reminders-db'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { TransactionList } from '@/app/ledger/_components/TransactionList'
+import type { LedgerListItem } from '@/app/ledger/_components/TransactionList'
 import { BottomNav } from '@/components/BottomNav'
 import { LedgerViewport } from '@/app/ledger/_components/LedgerViewport'
 import {
@@ -46,8 +48,14 @@ export default async function LedgerPage({ searchParams }: PageProps) {
   const queryTrimmed = queryRaw.trim()
   const visibleLimit = parseVisibleLimit(params.take)
 
-  const [transactions, allAccounts] = await Promise.all([
+  const [transactions, maintenanceRecords, allAccounts] = await Promise.all([
     getTransactions({
+      startDate: isSearchMode ? undefined : formatDate(periodRange.start),
+      endDate: isSearchMode ? undefined : formatDate(periodRange.end),
+      accountId,
+      query: queryTrimmed || undefined,
+    }),
+    getMaintenanceRecords({
       startDate: isSearchMode ? undefined : formatDate(periodRange.start),
       endDate: isSearchMode ? undefined : formatDate(periodRange.end),
       accountId,
@@ -55,14 +63,15 @@ export default async function LedgerPage({ searchParams }: PageProps) {
     }),
     getActiveAccounts(),
   ])
+  const records = [...transactions, ...maintenanceRecords].sort(compareLedgerItems)
   const visibleAccounts = allAccounts.filter((account) => !account.hidden)
   const selectedAccount = allAccounts.find((account) => account.id === accountId)
   const accountLabel = selectedAccount?.name ?? '全部帳戶'
-  const recordLabel = `${transactions.length.toLocaleString('zh-TW')} 筆`
-  const visibleTransactions = transactions.slice(0, visibleLimit)
-  const hasMoreTransactions = visibleTransactions.length < transactions.length
+  const recordLabel = `${records.length.toLocaleString('zh-TW')} 筆`
+  const visibleTransactions = records.slice(0, visibleLimit)
+  const hasMoreTransactions = visibleTransactions.length < records.length
   const loadMoreHref = hasMoreTransactions
-    ? buildLedgerLoadMoreHref(params, Math.min(transactions.length, visibleLimit + VISIBLE_TRANSACTION_STEP))
+    ? buildLedgerLoadMoreHref(params, Math.min(records.length, visibleLimit + VISIBLE_TRANSACTION_STEP))
     : undefined
   const periodTitle = formatLedgerTitle(view, anchorDate)
   const summary = transactions.reduce(
@@ -95,7 +104,7 @@ export default async function LedgerPage({ searchParams }: PageProps) {
             accounts={allAccounts}
             currentAccountId={accountId}
             returnUrl={buildLedgerReturnHref(params)}
-            totalCount={transactions.length}
+            totalCount={records.length}
             loadMoreHref={loadMoreHref}
           />
         </div>
@@ -138,4 +147,14 @@ function formatDate(date: Date) {
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
+}
+
+function compareLedgerItems(a: LedgerListItem, b: LedgerListItem) {
+  if (a.occurred_on !== b.occurred_on) return b.occurred_on.localeCompare(a.occurred_on)
+
+  const timeA = 'occurred_at' in a ? (a.occurred_at ?? a.created_at) : a.created_at
+  const timeB = 'occurred_at' in b ? (b.occurred_at ?? b.created_at) : b.created_at
+  if (timeA !== timeB) return timeB.localeCompare(timeA)
+
+  return b.created_at.localeCompare(a.created_at)
 }

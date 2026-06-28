@@ -1,15 +1,15 @@
 'use client'
 
-import { useOptimistic, useState, useTransition } from 'react'
+import { useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
-import { completeReminder } from '@/app/actions/reminders'
+import { completeReminder, deleteReminder, setReminderPaused } from '@/app/actions/reminders'
 import type { ReminderGroup, ReminderItem } from '@/lib/reminders-db'
 
 const FREQUENCY_LABELS: Record<string, string> = {
   once: '一次',
   weekly: '每週',
   monthly: '每月',
-  quarterly: '每季',
+  quarterly: '每三個月',
   yearly: '每年',
 }
 
@@ -18,20 +18,10 @@ const CATEGORY_COLORS: Record<string, string> = {
   房屋: 'bg-[#e8f5e9] text-[#2e7d32]',
   帳單: 'bg-[#e3f2fd] text-[#1565c0]',
   家事: 'bg-[#fce4ec] text-[#880e4f]',
-  其他: 'bg-[#f3e5f5] text-[#6a1b9a]',
+  其他: 'bg-[#f3f4f6] text-[#475569]',
 }
 
 const CATEGORY_ORDER = ['車子', '房屋', '帳單', '家事', '其他']
-
-function nextDueOn(frequency: string, from: Date): string {
-  const d = new Date(from)
-  if (frequency === 'weekly') d.setDate(d.getDate() + 7)
-  else if (frequency === 'monthly') { d.setDate(1); d.setMonth(d.getMonth() + 1) }
-  else if (frequency === 'quarterly') { d.setDate(1); d.setMonth(d.getMonth() + 3) }
-  else if (frequency === 'yearly') { d.setDate(1); d.setMonth(d.getMonth() + 12) }
-  else return ''
-  return d.toISOString().slice(0, 10)
-}
 
 function formatDueOn(dueOn: string | null) {
   if (!dueOn) return '未排程'
@@ -40,9 +30,9 @@ function formatDueOn(dueOn: string | null) {
   const now = new Date()
   const diffDays = Math.round((d.getTime() - now.getTime()) / 86400000)
   const formatted = new Intl.DateTimeFormat('zh-TW', { month: 'numeric', day: 'numeric' }).format(d)
-  if (diffDays < 0) return `逾期 ${-diffDays} 天（${formatted}）`
-  if (diffDays === 0) return `今天（${formatted}）`
-  if (diffDays <= 7) return `${diffDays} 天後（${formatted}）`
+  if (diffDays < 0) return `逾期 ${-diffDays} 天 · ${formatted}`
+  if (diffDays === 0) return `今天 · ${formatted}`
+  if (diffDays <= 7) return `${diffDays} 天後 · ${formatted}`
   return formatted
 }
 
@@ -57,7 +47,7 @@ function dueUrgency(dueOn: string | null): 'overdue' | 'soon' | 'normal' {
 }
 
 function compareDueDate(a: ReminderItem, b: ReminderItem) {
-  if (!a.dueOn && !b.dueOn) return 0
+  if (!a.dueOn && !b.dueOn) return a.name.localeCompare(b.name, 'zh-TW')
   if (!a.dueOn) return 1
   if (!b.dueOn) return -1
   return a.dueOn.localeCompare(b.dueOn)
@@ -92,114 +82,218 @@ function groupRemindersByCategory(reminders: ReminderItem[]): ReminderGroup[] {
   return result
 }
 
-type OptimisticAction = { type: 'complete'; id: string }
+function todayDateString() {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
 
 export function ReminderList({ reminders }: { reminders: ReminderItem[] }) {
   const router = useRouter()
-  const [busyId, setBusyId] = useState<string | null>(null)
+  const [pendingKey, setPendingKey] = useState<string | null>(null)
   const [, startTransition] = useTransition()
-  const [optimisticReminders, applyOptimistic] = useOptimistic(
-    reminders,
-    (current: ReminderItem[], action: OptimisticAction) => {
-      return current.flatMap((item) => {
-        if (item.id !== action.id) return [item]
-        if (item.frequency === 'once') return []
 
-        const fromDate = item.dueOn ? new Date(`${item.dueOn}T12:00:00`) : new Date()
-        return [{ ...item, dueOn: nextDueOn(item.frequency, fromDate) }]
-      })
-    },
-  )
-  const groups = groupRemindersByCategory(optimisticReminders)
+  const activeGroups = groupRemindersByCategory(reminders.filter((item) => !item.isPaused))
+  const pausedItems = reminders
+    .filter((item) => item.isPaused)
+    .slice()
+    .sort((a, b) => a.name.localeCompare(b.name, 'zh-TW'))
 
-  function handleComplete(reminderId: string) {
-    setBusyId(reminderId)
+  function runAction(key: string, action: () => Promise<{ ok: boolean; error?: string }>) {
+    setPendingKey(key)
     startTransition(async () => {
-      applyOptimistic({ type: 'complete', id: reminderId })
-      const data = new FormData()
-      data.set('reminder_id', reminderId)
       try {
-        const result = await completeReminder(data)
+        const result = await action()
         if (!result.ok) {
-          window.alert(`完成失敗：${result.error}`)
+          window.alert(result.error ?? '操作失敗，請再試一次。')
         }
       } catch {
-        window.alert('完成失敗，請再試一次。')
+        window.alert('操作失敗，請再試一次。')
       } finally {
-        setBusyId(null)
+        setPendingKey(null)
         router.refresh()
       }
     })
   }
 
-  if (groups.length === 0) {
+  function handleComplete(reminderId: string) {
+    runAction(`complete:${reminderId}`, async () => {
+      const data = new FormData()
+      data.set('reminder_id', reminderId)
+      data.set('completed_on', todayDateString())
+      return completeReminder(data)
+    })
+  }
+
+  function handlePause(reminderId: string, paused: boolean) {
+    runAction(`pause:${reminderId}`, async () => {
+      const data = new FormData()
+      data.set('reminder_id', reminderId)
+      data.set('paused', String(paused))
+      return setReminderPaused(data)
+    })
+  }
+
+  function handleDelete(reminderId: string) {
+    if (!window.confirm('刪除後，這個保養項目和歷史都會一起移除。要繼續嗎？')) return
+
+    runAction(`delete:${reminderId}`, async () => {
+      const data = new FormData()
+      data.set('reminder_id', reminderId)
+      return deleteReminder(data)
+    })
+  }
+
+  if (activeGroups.length === 0 && pausedItems.length === 0) {
     return (
       <div className="mt-8 rounded-[1.5rem] border border-dashed border-[#d6cec0] bg-white px-6 py-10 text-center shadow-sm">
-        <p className="text-[1.1rem] font-black text-[#8f959c]">目前沒有待處理提醒</p>
+        <p className="text-[1.1rem] font-black text-[#8f959c]">目前沒有保養項目</p>
         <p className="mt-2 text-sm font-semibold text-[#b0b5ba]">
-          點「+ 新增」加入你的第一個提醒事項
+          點「+ 新增」到記一筆建立第一個保養項目
         </p>
       </div>
     )
   }
 
   return (
-    <div className="space-y-5">
-      {groups.map((group) => (
-        <section key={group.category}>
+    <div className="space-y-6">
+      {activeGroups.length > 0 ? (
+        <section className="space-y-5">
+          {activeGroups.map((group) => (
+            <section key={group.category}>
+              <div className="mb-2 flex items-center gap-2">
+                <span className={`rounded-full px-2.5 py-0.5 text-[0.7rem] font-black ${CATEGORY_COLORS[group.category] ?? 'bg-[#f0ebe1] text-[#6f5e3a]'}`}>
+                  {group.category}
+                </span>
+                <span className="text-[0.68rem] font-bold text-[#9d9d9d]">{group.items.length} 項</span>
+              </div>
+
+              <div className="space-y-2">
+                {group.items.map((item) => {
+                  const urgency = dueUrgency(item.dueOn)
+                  const busyComplete = pendingKey === `complete:${item.id}`
+                  const busyPause = pendingKey === `pause:${item.id}`
+                  const busyDelete = pendingKey === `delete:${item.id}`
+
+                  return (
+                    <div
+                      key={item.id}
+                      className={`rounded-[1.25rem] border bg-white px-4 py-3 shadow-sm ${
+                        urgency === 'overdue'
+                          ? 'border-[#f9c2c2]'
+                          : urgency === 'soon'
+                            ? 'border-[#fde8b8]'
+                            : 'border-[#ece8e1]'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-[0.95rem] font-black text-[#202124]">{item.name}</p>
+                          <p className="mt-0.5 text-[0.7rem] font-semibold text-[#8f959c]">
+                            {FREQUENCY_LABELS[item.frequency] ?? item.frequency}
+                            {item.accountName ? ` · ${item.accountName}` : ''}
+                            {item.detail ? ` · ${item.detail}` : ''}
+                          </p>
+                        </div>
+                        <span className={`shrink-0 text-[0.72rem] font-black ${
+                          urgency === 'overdue' ? 'text-[#d44]' : urgency === 'soon' ? 'text-[#c07800]' : 'text-[#5f6368]'
+                        }`}>
+                          {formatDueOn(item.dueOn)}
+                        </span>
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleComplete(item.id)}
+                          disabled={busyComplete || busyPause || busyDelete}
+                          className="rounded-full border border-[#d6e8df] bg-white px-3 py-1.5 text-[0.72rem] font-black text-[#4f8d7c] shadow-sm transition hover:bg-[#edf8f4] active:scale-95 disabled:opacity-50"
+                        >
+                          {busyComplete ? '處理中…' : '今天完成'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handlePause(item.id, true)}
+                          disabled={busyComplete || busyPause || busyDelete}
+                          className="rounded-full border border-[#e9dcc5] bg-[#faf6ef] px-3 py-1.5 text-[0.72rem] font-black text-[#8a6f49] transition active:scale-95 disabled:opacity-50"
+                        >
+                          {busyPause ? '處理中…' : '暫停'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDelete(item.id)}
+                          disabled={busyComplete || busyPause || busyDelete}
+                          className="rounded-full border border-[#f0d3cf] bg-[#fff4f2] px-3 py-1.5 text-[0.72rem] font-black text-[#c9563f] transition active:scale-95 disabled:opacity-50"
+                        >
+                          {busyDelete ? '處理中…' : '刪除'}
+                        </button>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </section>
+          ))}
+        </section>
+      ) : (
+        <div className="rounded-[1.5rem] border border-dashed border-[#d6cec0] bg-white px-6 py-8 text-center shadow-sm">
+          <p className="text-[1rem] font-black text-[#8f959c]">目前沒有進行中的保養項目</p>
+        </div>
+      )}
+
+      {pausedItems.length > 0 ? (
+        <section>
           <div className="mb-2 flex items-center gap-2">
-            <span className={`rounded-full px-2.5 py-0.5 text-[0.7rem] font-black ${CATEGORY_COLORS[group.category] ?? 'bg-[#f0ebe1] text-[#6f5e3a]'}`}>
-              {group.category}
+            <span className="rounded-full bg-[#eef1f5] px-2.5 py-0.5 text-[0.7rem] font-black text-[#64748b]">
+              已暫停
             </span>
-            <span className="text-[0.68rem] font-bold text-[#9d9d9d]">{group.items.length} 項</span>
+            <span className="text-[0.68rem] font-bold text-[#9d9d9d]">{pausedItems.length} 項</span>
           </div>
 
           <div className="space-y-2">
-            {group.items.map((item) => {
-              const urgency = dueUrgency(item.dueOn)
+            {pausedItems.map((item) => {
+              const busyPause = pendingKey === `pause:${item.id}`
+              const busyDelete = pendingKey === `delete:${item.id}`
+
               return (
-                <div
-                  key={item.id}
-                  className={`rounded-[1.25rem] border bg-white px-4 py-3 shadow-sm ${
-                    urgency === 'overdue'
-                      ? 'border-[#f9c2c2]'
-                      : urgency === 'soon'
-                        ? 'border-[#fde8b8]'
-                        : 'border-[#ece8e1]'
-                  }`}
-                >
+                <div key={item.id} className="rounded-[1.25rem] border border-[#ece8e1] bg-white px-4 py-3 shadow-sm">
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0 flex-1">
                       <p className="text-[0.95rem] font-black text-[#202124]">{item.name}</p>
                       <p className="mt-0.5 text-[0.7rem] font-semibold text-[#8f959c]">
                         {FREQUENCY_LABELS[item.frequency] ?? item.frequency}
                         {item.accountName ? ` · ${item.accountName}` : ''}
-                        {item.detail ? ` · ${item.detail}` : ''}
                       </p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => handleComplete(item.id)}
-                      disabled={busyId === item.id}
-                      className="shrink-0 rounded-full border border-[#d6e8df] bg-white px-3 py-1.5 text-[0.72rem] font-black text-[#4f8d7c] shadow-sm transition hover:bg-[#edf8f4] active:scale-95 disabled:opacity-50"
-                    >
-                      {busyId === item.id ? '處理中…' : '完成'}
-                    </button>
+                    <span className="text-[0.72rem] font-black text-slate-400">已暫停</span>
                   </div>
 
-                  <div className="mt-2 flex items-center gap-1.5">
-                    <span className={`text-[0.72rem] font-black ${
-                      urgency === 'overdue' ? 'text-[#d44]' : urgency === 'soon' ? 'text-[#c07800]' : 'text-[#5f6368]'
-                    }`}>
-                      {formatDueOn(item.dueOn)}
-                    </span>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handlePause(item.id, false)}
+                      disabled={busyPause || busyDelete}
+                      className="rounded-full border border-[#d6e8df] bg-white px-3 py-1.5 text-[0.72rem] font-black text-[#4f8d7c] shadow-sm transition hover:bg-[#edf8f4] active:scale-95 disabled:opacity-50"
+                    >
+                      {busyPause ? '處理中…' : '恢復'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(item.id)}
+                      disabled={busyPause || busyDelete}
+                      className="rounded-full border border-[#f0d3cf] bg-[#fff4f2] px-3 py-1.5 text-[0.72rem] font-black text-[#c9563f] transition active:scale-95 disabled:opacity-50"
+                    >
+                      {busyDelete ? '處理中…' : '刪除'}
+                    </button>
                   </div>
                 </div>
               )
             })}
           </div>
         </section>
-      ))}
+      ) : null}
     </div>
   )
 }

@@ -5,7 +5,6 @@ type ReminderItem = {
   name: string
   detail: string | null
   dueOn: string | null
-  mileageDue: number | null
   frequency: string
   accountName: string | null
 }
@@ -34,11 +33,6 @@ function formatDueText(reminder: ReminderItem) {
     }
     return reminder.dueOn
   }
-
-  if (Number.isFinite(reminder.mileageDue ?? NaN)) {
-    return `${Number(reminder.mileageDue).toLocaleString('zh-TW')} km`
-  }
-
   return '未排程'
 }
 
@@ -49,7 +43,7 @@ export function UpcomingRemindersCard({ reminders }: Props) {
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-[0.72rem] font-black tracking-[0.16em] text-slate-400">即將到期</p>
-            <p className="mt-1 text-[0.92rem] font-black text-[#202124]">家事與保養提醒</p>
+            <p className="mt-1 text-[0.92rem] font-black text-[#202124]">保養總覽</p>
           </div>
           <span className="rounded-full border border-[#e9dcc5] bg-[#faf6ef] px-2.5 py-1 text-[0.68rem] font-black text-[#8a6f49]">
             {reminders.length} 項
@@ -77,13 +71,13 @@ export function UpcomingRemindersCard({ reminders }: Props) {
                 </div>
                 <div className="mt-2 flex items-center justify-between gap-2 text-[0.64rem] font-bold text-slate-400">
                   <span>{frequencyLabel(reminder.frequency)}</span>
-                  <span>→ 查看提醒</span>
+                  <span>→ 查看保養</span>
                 </div>
               </div>
             ))
           ) : (
             <div className="rounded-[1rem] border border-dashed border-[#e8dfd1] bg-[#fcfbf8] px-3 py-5 text-center text-sm font-bold text-slate-400">
-              目前沒有待處理提醒
+              目前沒有待處理保養
             </div>
           )}
         </div>

@@ -9,6 +9,7 @@ import {
 } from '@/lib/family-transactions'
 import { getRecurringTransactionById } from '@/lib/recurring-db'
 import { getTwdRateTable } from '@/lib/exchange-rates'
+import { getMaintenanceItemsForForm } from '@/lib/reminders-db'
 import { TransactionForm } from '@/app/ledger/_components/TransactionForm'
 import { BottomNav } from '@/components/BottomNav'
 import type { FamilyAccount } from '@/lib/finance/types'
@@ -49,8 +50,9 @@ export default async function NewTransactionPage({
     : null
   const initialKind = params.kind === 'reminder' ? 'reminder' : undefined
 
-  const [accounts, categories, merchants, merchantGroups, latestPreset, rateTable, recentAccountIdsByKind] = await Promise.all([
+  const [accounts, maintenanceItems, categories, merchants, merchantGroups, latestPreset, rateTable, recentAccountIdsByKind] = await Promise.all([
     getActiveAccounts(Boolean(copyTransaction)),
+    getMaintenanceItemsForForm(),
     getAllCategories(),
     getAllMerchants(),
     getMerchantGroups(),
@@ -65,6 +67,7 @@ export default async function NewTransactionPage({
         <section className="mx-auto min-h-screen w-full max-w-md">
           <TransactionForm
             accounts={accounts}
+            maintenanceItems={maintenanceItems}
             categories={categories}
             merchants={merchants}
             merchantGroups={merchantGroups}
