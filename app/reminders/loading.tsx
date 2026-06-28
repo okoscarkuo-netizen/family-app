@@ -1,5 +1,5 @@
 import { MobilePageSkeleton } from '@/components/MobilePageSkeleton'
 
 export default function Loading() {
-  return <MobilePageSkeleton title="提醒" />
+  return <MobilePageSkeleton title="保養" />
 }

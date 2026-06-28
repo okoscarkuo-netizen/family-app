@@ -12,7 +12,7 @@ import {
   updateMerchantGroup,
   updateMerchant,
 } from '@/app/actions/merchant-groups'
-import { createMaintenanceReminder } from '@/app/actions/reminders'
+import { saveMaintenanceRecord } from '@/app/actions/reminders'
 import { createRecurringTransaction } from '@/app/actions/recurring'
 import { createTransaction, deleteTransaction, updateTransaction } from '@/app/actions/transactions'
 import {
@@ -35,6 +35,7 @@ import { getCategoryDisplayIcon } from '@/lib/category-icons'
 import { CategoryIcon } from '@/components/CategoryIcon'
 import { normalizeOwner } from '@/lib/finance/types'
 import type { FamilyAccount } from '@/lib/finance/types'
+import type { MaintenanceFormItem } from '@/lib/reminders-db'
 
 type Kind = 'expense' | 'income' | 'transfer' | 'reminder'
 
@@ -44,7 +45,7 @@ const KIND_LABELS: Record<Kind, string> = {
   expense: '支出',
   income: '收入',
   transfer: '轉帳',
-  reminder: '提辦',
+  reminder: '保養',
 }
 
 const CURRENCIES = ['TWD', 'USD', 'JPY'] as const
@@ -88,6 +89,7 @@ type SelectOptionGroup = {
 
 type Props = {
   accounts: Pick<FamilyAccount, 'id' | 'name' | 'currency' | 'kind' | 'balance' | 'owner' | 'shared' | 'type' | 'favorite'>[]
+  maintenanceItems: MaintenanceFormItem[]
   categories: FamilyCategory[]
   merchants: FamilyMerchant[]
   merchantGroups: FamilyMerchantGroup[]
@@ -125,6 +127,13 @@ function toLocalDateTimeValue(value: string | null | undefined) {
 }
 
 function ledgerHrefForOccurredAt(value: string) {
+  const match = value.match(/^(\d{4})-(\d{2})-/)
+  if (!match) return '/ledger'
+
+  return `/ledger?year=${match[1]}&month=${Number(match[2])}`
+}
+
+function ledgerHrefForDate(value: string) {
   const match = value.match(/^(\d{4})-(\d{2})-/)
   if (!match) return '/ledger'
 
@@ -364,6 +373,25 @@ function formatReminderDueLabel(value: string) {
   return sameDay ? `今天 · ${dateLabel}` : dateLabel
 }
 
+function buildMaintenanceItemOptions(items: MaintenanceFormItem[]): Array<SelectOption | SelectOptionGroup> {
+  const grouped = new Map<string, SelectOption[]>()
+
+  for (const item of items) {
+    const category = item.category ?? '其他'
+    const group = grouped.get(category) ?? []
+    group.push({
+      value: item.id,
+      label: item.name,
+    })
+    grouped.set(category, group)
+  }
+
+  return [...grouped.entries()].map(([label, options]) => ({
+    label,
+    options,
+  }))
+}
+
 function resolveCategorySelection(
   groups: CategoryPickerGroup[],
   requestedCategoryId: string | null | undefined,
@@ -564,6 +592,27 @@ function TextFieldRow({
   )
 }
 
+function ValueFieldRow({
+  tone,
+  label,
+  value,
+  muted = false,
+}: {
+  tone: string
+  label: string
+  value: string
+  muted?: boolean
+}) {
+  return (
+    <div className="flex min-h-[2.8rem] items-center justify-between gap-4 px-5">
+      <FieldLabel tone={tone} label={label} />
+      <div className={`min-w-0 flex-1 text-right text-[1.02rem] font-black ${muted ? 'text-slate-400' : 'text-slate-950'}`}>
+        <span className="block truncate">{value}</span>
+      </div>
+    </div>
+  )
+}
+
 function TransferAccountRow({
   label,
   value,
@@ -711,16 +760,18 @@ function TransferAmountPairRow({
 }
 
 function ReminderDueDateRow({
+  label = '下次提醒',
   value,
   onChange,
 }: {
+  label?: string
   value: string
   onChange: (value: string) => void
 }) {
   return (
     <label className="relative flex min-h-[2.9rem] items-center justify-between gap-4 px-5">
       <div className="flex items-center gap-3">
-        <span className="text-[0.68rem] font-black tracking-[0.16em] text-[#7b9e91]">下次提醒</span>
+        <span className="text-[0.68rem] font-black tracking-[0.16em] text-[#7b9e91]">{label}</span>
       </div>
       <span className={`truncate text-right text-[1rem] font-black ${value ? 'text-slate-950' : 'text-slate-400'}`}>
         {formatReminderDueLabel(value)}
@@ -730,7 +781,7 @@ function ReminderDueDateRow({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className="absolute inset-0 cursor-pointer opacity-0"
-        aria-label="下次提醒日期"
+        aria-label={label}
       />
     </label>
   )
@@ -1995,6 +2046,7 @@ function MerchantManagerSheet({
 
 export function TransactionForm({
   accounts,
+  maintenanceItems,
   categories,
   merchants,
   merchantGroups,
@@ -2069,6 +2121,8 @@ export function TransactionForm({
   const [toAccountId, setToAccountId] = useState(seedTransaction ? seedTransaction.to_account_id ?? '' : initialPreset?.toAccountId ?? '')
   const [merchant, setMerchant] = useState(seedTransaction ? seedTransaction.merchant ?? '' : '')
   const [occurredAt, setOccurredAt] = useState(seedTransaction ? toLocalDateTimeValue(seedTransaction.occurred_at ?? seedTransaction.created_at) : currentLocalDateTimeValue)
+  const [maintenanceMode, setMaintenanceMode] = useState<'existing' | 'new'>(maintenanceItems.length > 0 ? 'existing' : 'new')
+  const [selectedMaintenanceId, setSelectedMaintenanceId] = useState(maintenanceItems[0]?.id ?? '')
   const [reminderTitle, setReminderTitle] = useState(seedTransaction ? seedTransaction.title ?? '' : '')
   const [reminderCategory, setReminderCategory] = useState<ReminderCategory>('其他')
   const [reminderFrequency, setReminderFrequency] = useState<ReminderFrequency>('quarterly')
@@ -2123,6 +2177,14 @@ export function TransactionForm({
     [accounts],
   )
   const reminderAccountOptions = accountOptions
+  const maintenanceItemOptions = useMemo(
+    () => buildMaintenanceItemOptions(maintenanceItems),
+    [maintenanceItems],
+  )
+  const maintenanceItemById = useMemo(
+    () => new Map(maintenanceItems.map((item) => [item.id, item])),
+    [maintenanceItems],
+  )
   const [showAllAccounts, setShowAllAccounts] = useState(false)
   const frequentAccountIdsByKind = useMemo(() => {
     const result: Record<Kind, string[]> = {
@@ -2159,6 +2221,9 @@ export function TransactionForm({
   const selectedToAccount = accountById.get(resolvedToAccountId) ?? null
   const resolvedReminderAccountId = accountById.has(accountId) ? accountId : ''
   const selectedReminderAccount = accountById.get(resolvedReminderAccountId) ?? null
+  const effectiveMaintenanceMode = maintenanceItems.length === 0 ? 'new' : maintenanceMode
+  const effectiveSelectedMaintenanceId = selectedMaintenanceId || maintenanceItems[0]?.id || ''
+  const selectedMaintenanceItem = maintenanceItemById.get(effectiveSelectedMaintenanceId) ?? null
   const amountValue = parseAmount(amount)
   const transferSourceCurrency = (selectedAccount?.currency || currency || 'TWD').toUpperCase()
   const transferDestinationCurrency = (selectedToAccount?.currency || transferSourceCurrency).toUpperCase()
@@ -2178,7 +2243,11 @@ export function TransactionForm({
         : null
   const canSubmit =
     kind === 'reminder'
-      ? Boolean(reminderTitle.trim()) && Boolean(reminderDueOn)
+      ? Boolean(reminderDueOn) && (
+          effectiveMaintenanceMode === 'existing'
+            ? Boolean(selectedMaintenanceItem)
+            : Boolean(reminderTitle.trim())
+        )
       : kind === 'transfer'
         ? Boolean(resolvedAccountId)
           && Boolean(resolvedToAccountId)
@@ -2334,15 +2403,19 @@ export function TransactionForm({
     setPending(true)
     try {
       const result = kind === 'reminder'
-        ? await createMaintenanceReminder(
+        ? await saveMaintenanceRecord(
             (() => {
               const reminderData = new FormData()
-              reminderData.set('name', reminderTitle.trim())
-              reminderData.set('category', reminderCategory)
-              reminderData.set('account_id', resolvedReminderAccountId)
-              reminderData.set('frequency', reminderFrequency)
-              reminderData.set('due_on', reminderDueOn)
-              reminderData.set('detail', note)
+              if (effectiveMaintenanceMode === 'existing' && selectedMaintenanceItem) {
+                reminderData.set('reminder_id', selectedMaintenanceItem.id)
+              } else {
+                reminderData.set('name', reminderTitle.trim())
+                reminderData.set('category', reminderCategory)
+                reminderData.set('account_id', resolvedReminderAccountId)
+                reminderData.set('frequency', reminderFrequency)
+              }
+              reminderData.set('completed_on', reminderDueOn)
+              reminderData.set('note', note)
               return reminderData
             })(),
           )
@@ -2423,12 +2496,22 @@ export function TransactionForm({
       }
 
       if (kind === 'reminder') {
-        setReminderTitle('')
+        if (effectiveMaintenanceMode === 'new') {
+          setReminderTitle('')
+          setReminderCategory('其他')
+          setReminderFrequency('quarterly')
+          setAccountId('')
+        }
         setNote('')
         if (submitMode !== 'stay') {
-          setReminderDueOn(currentLocalDateValue())
+          router.push(returnUrl ?? ledgerHrefForDate(reminderDueOn))
+          return
         }
-        setMessage({ tone: 'success', text: '提醒已儲存。' })
+        setReminderDueOn(currentLocalDateValue())
+        if (effectiveMaintenanceMode === 'new') {
+          router.refresh()
+        }
+        setMessage({ tone: 'success', text: '保養紀錄已儲存。' })
         return
       }
 
@@ -2788,7 +2871,7 @@ export function TransactionForm({
             disabled={pending || !canSubmit}
             className="min-h-12 rounded-md border border-[#d7e8e0] bg-[#f5fbf8] px-4 text-[0.95rem] font-black text-[#356f5f] transition active:scale-[0.98] disabled:border-transparent disabled:bg-[#edf3ef] disabled:text-slate-400"
           >
-            {pending ? '保存中' : '再加一個'}
+            {pending ? '保存中' : '再記一筆'}
           </button>
           <button
             type="submit"
@@ -2797,7 +2880,7 @@ export function TransactionForm({
             disabled={pending || !canSubmit}
             className="min-h-12 rounded-md bg-slate-950 px-4 text-[0.95rem] font-black text-white shadow-[0_12px_24px_rgba(15,23,42,0.18)] transition active:scale-[0.98] disabled:bg-[#d8d0c3] disabled:text-white/75 disabled:shadow-none"
           >
-            {pending ? '保存中' : '儲存提醒'}
+            {pending ? '保存中' : '保存紀錄'}
           </button>
         </div>
       )
@@ -2932,12 +3015,12 @@ export function TransactionForm({
           <section className="overflow-hidden bg-white px-4 pb-2 pt-2 border-b border-[#f0f0f0]">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
-                <p className="text-[0.68rem] font-black tracking-[0.18em] text-[#5b8c79]">提辦</p>
+                <p className="text-[0.68rem] font-black tracking-[0.18em] text-[#5b8c79]">保養</p>
                 <h2 className="mt-1.5 text-[1.4rem] font-black leading-tight text-slate-950">
-                  把重要的事先排進行事曆
+                  記下這次已完成的保養
                 </h2>
                 <p className="mt-2 text-sm font-semibold leading-6 text-slate-600">
-                  帳單繳費、定期保養、家事待辦都可以記在這裡。
+                  冷氣濾網、汽車濾網、RO 濾心這類固定工作，做完一次就留一次歷史。
                 </p>
               </div>
             </div>
@@ -2946,68 +3029,136 @@ export function TransactionForm({
           </section>
 
           <section className="overflow-hidden bg-white">
-            <div className="flex min-h-[2.8rem] items-center justify-between gap-4 px-5">
-              <FieldLabel tone="bg-[#4f8d7c]" label="類別" />
-              <div className="flex flex-wrap justify-end gap-1.5">
-                {REMINDER_CATEGORIES.map((cat) => (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => setReminderCategory(cat)}
-                    className={`rounded-full px-3 py-1.5 text-xs font-black transition ${
-                      reminderCategory === cat
-                        ? 'bg-[#4f8d7c] text-white'
-                        : 'bg-[#f0f7f4] text-[#4f8d7c]'
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-            </div>
+            {maintenanceItems.length > 0 ? (
+              <>
+                <div className="flex min-h-[2.8rem] items-center justify-between gap-4 px-5">
+                  <FieldLabel tone="bg-[#4f8d7c]" label="模式" />
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setMaintenanceMode('existing')}
+                      className={`rounded-full px-3 py-1.5 text-xs font-black transition ${
+                        maintenanceMode === 'existing'
+                          ? 'bg-[#4f8d7c] text-white'
+                          : 'bg-[#f0f7f4] text-[#4f8d7c]'
+                      }`}
+                    >
+                      記既有項目
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMaintenanceMode('new')}
+                      className={`rounded-full px-3 py-1.5 text-xs font-black transition ${
+                        maintenanceMode === 'new'
+                          ? 'bg-[#4f8d7c] text-white'
+                          : 'bg-[#f0f7f4] text-[#4f8d7c]'
+                      }`}
+                    >
+                      新增項目
+                    </button>
+                  </div>
+                </div>
+                <div className="mx-5 h-px bg-[#edf2ed]" />
+              </>
+            ) : null}
+
+            {effectiveMaintenanceMode === 'existing' && maintenanceItems.length > 0 ? (
+              <>
+                <SelectFieldRow
+                  tone="bg-[#4f8d7c]"
+                  label="保養項目"
+                  value={selectedMaintenanceItem?.name ?? '選擇保養項目'}
+                  selectedValue={effectiveSelectedMaintenanceId}
+                  onChange={setSelectedMaintenanceId}
+                  options={maintenanceItemOptions}
+                />
+                <div className="mx-5 h-px bg-[#edf2ed]" />
+                <ValueFieldRow
+                  tone="bg-[#6b9d89]"
+                  label="週期"
+                  value={selectedMaintenanceItem ? REMINDER_FREQUENCY_LABELS[selectedMaintenanceItem.frequency] : '未設定'}
+                  muted={!selectedMaintenanceItem}
+                />
+                <div className="mx-5 h-px bg-[#edf2ed]" />
+                <ValueFieldRow
+                  tone="bg-[#85a86c]"
+                  label="關聯帳戶"
+                  value={selectedMaintenanceItem?.accountName ?? '未連結帳戶'}
+                />
+                <div className="mx-5 h-px bg-[#edf2ed]" />
+                <ValueFieldRow
+                  tone="bg-[#9ab37d]"
+                  label="目前到期"
+                  value={selectedMaintenanceItem?.dueOn ? formatReminderDueLabel(selectedMaintenanceItem.dueOn) : '未排程'}
+                />
+              </>
+            ) : (
+              <>
+                <div className="flex min-h-[2.8rem] items-center justify-between gap-4 px-5">
+                  <FieldLabel tone="bg-[#4f8d7c]" label="類別" />
+                  <div className="flex flex-wrap justify-end gap-1.5">
+                    {REMINDER_CATEGORIES.map((cat) => (
+                      <button
+                        key={cat}
+                        type="button"
+                        onClick={() => setReminderCategory(cat)}
+                        className={`rounded-full px-3 py-1.5 text-xs font-black transition ${
+                          reminderCategory === cat
+                            ? 'bg-[#4f8d7c] text-white'
+                            : 'bg-[#f0f7f4] text-[#4f8d7c]'
+                        }`}
+                      >
+                        {cat}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="mx-5 h-px bg-[#edf2ed]" />
+                <TextFieldRow
+                  tone="bg-[#4f8d7c]"
+                  label="項目名稱"
+                  placeholder="例：RO 濾心更換"
+                  value={reminderTitle}
+                  onChange={setReminderTitle}
+                />
+                <div className="mx-5 h-px bg-[#edf2ed]" />
+                <SelectFieldRow
+                  tone="bg-[#6b9d89]"
+                  label="關聯帳戶"
+                  value={selectedReminderAccount ? formatAccountLabel(selectedReminderAccount) : '選擇帳戶（選填）'}
+                  selectedValue={resolvedReminderAccountId}
+                  onChange={setAccountId}
+                  options={[
+                    { value: '', label: '不連結帳戶' },
+                    ...reminderAccountOptions,
+                  ]}
+                />
+                <div className="mx-5 h-px bg-[#edf2ed]" />
+                <SelectFieldRow
+                  tone="bg-[#85a86c]"
+                  label="週期"
+                  value={REMINDER_FREQUENCY_LABELS[reminderFrequency]}
+                  selectedValue={reminderFrequency}
+                  onChange={(value) => {
+                    if (REMINDER_FREQUENCIES.includes(value as ReminderFrequency)) {
+                      setReminderFrequency(value as ReminderFrequency)
+                    }
+                  }}
+                  options={REMINDER_FREQUENCIES.map((frequency) => ({
+                    value: frequency,
+                    label: REMINDER_FREQUENCY_LABELS[frequency],
+                  }))}
+                />
+              </>
+            )}
+
             <div className="mx-5 h-px bg-[#edf2ed]" />
-            <TextFieldRow
-              tone="bg-[#4f8d7c]"
-              label="事項名稱"
-              placeholder="例：RO 濾心更換"
-              value={reminderTitle}
-              onChange={setReminderTitle}
-            />
-            <div className="mx-5 h-px bg-[#edf2ed]" />
-            <SelectFieldRow
-              tone="bg-[#6b9d89]"
-              label="關聯帳戶"
-              value={selectedReminderAccount ? formatAccountLabel(selectedReminderAccount) : '選擇帳戶（選填）'}
-              selectedValue={resolvedReminderAccountId}
-              onChange={setAccountId}
-              options={[
-                { value: '', label: '不連結帳戶' },
-                ...reminderAccountOptions,
-              ]}
-            />
-            <div className="mx-5 h-px bg-[#edf2ed]" />
-            <SelectFieldRow
-              tone="bg-[#85a86c]"
-              label="頻率"
-              value={REMINDER_FREQUENCY_LABELS[reminderFrequency]}
-              selectedValue={reminderFrequency}
-              onChange={(value) => {
-                if (REMINDER_FREQUENCIES.includes(value as ReminderFrequency)) {
-                  setReminderFrequency(value as ReminderFrequency)
-                }
-              }}
-              options={REMINDER_FREQUENCIES.map((frequency) => ({
-                value: frequency,
-                label: REMINDER_FREQUENCY_LABELS[frequency],
-              }))}
-            />
-            <div className="mx-5 h-px bg-[#edf2ed]" />
-            <ReminderDueDateRow value={reminderDueOn} onChange={setReminderDueOn} />
+            <ReminderDueDateRow label="完成日期" value={reminderDueOn} onChange={setReminderDueOn} />
             <div className="mx-5 h-px bg-[#edf2ed]" />
             <TextFieldRow
               tone="bg-[#8a7de2]"
               label="備註"
-              placeholder="例：3M 型號、安裝日期、注意事項"
+              placeholder="例：已更換、品牌型號、這次注意事項"
               value={note}
               onChange={setNote}
             />

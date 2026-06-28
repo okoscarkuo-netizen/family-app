@@ -12,7 +12,15 @@ export type CreateMaintenanceReminderResult =
   | { ok: true }
   | { ok: false; error: string }
 
+export type SaveMaintenanceRecordResult =
+  | { ok: true }
+  | { ok: false; error: string }
+
 export type CompleteReminderResult =
+  | { ok: true }
+  | { ok: false; error: string }
+
+export type ReminderMutationResult =
   | { ok: true }
   | { ok: false; error: string }
 
@@ -30,8 +38,10 @@ const VALID_CATEGORIES = new Set([
 
 let householdIdColumnSupported: boolean | null = null
 let createdByColumnSupported: boolean | null = null
+let pausedColumnSupported: boolean | null = null
+let maintenanceRecordsTableSupported: boolean | null = null
 
-async function probeColumn(supabase: AdminClient, column: string): Promise<boolean> {
+async function probeReminderColumn(supabase: AdminClient, column: string): Promise<boolean> {
   const { error } = await supabase.from('maintenance_reminders').select(column).limit(1)
   if (error) {
     if (error.code === '42703' || error.code === 'PGRST204') return false
@@ -42,14 +52,32 @@ async function probeColumn(supabase: AdminClient, column: string): Promise<boole
 
 async function supportsHouseholdIdColumn(supabase: AdminClient): Promise<boolean> {
   if (householdIdColumnSupported !== null) return householdIdColumnSupported
-  householdIdColumnSupported = await probeColumn(supabase, 'household_id')
+  householdIdColumnSupported = await probeReminderColumn(supabase, 'household_id')
   return householdIdColumnSupported
 }
 
 async function supportsCreatedByColumn(supabase: AdminClient): Promise<boolean> {
   if (createdByColumnSupported !== null) return createdByColumnSupported
-  createdByColumnSupported = await probeColumn(supabase, 'created_by')
+  createdByColumnSupported = await probeReminderColumn(supabase, 'created_by')
   return createdByColumnSupported
+}
+
+async function supportsPausedColumn(supabase: AdminClient): Promise<boolean> {
+  if (pausedColumnSupported !== null) return pausedColumnSupported
+  pausedColumnSupported = await probeReminderColumn(supabase, 'is_paused')
+  return pausedColumnSupported
+}
+
+async function supportsMaintenanceRecordsTable(supabase: AdminClient): Promise<boolean> {
+  if (maintenanceRecordsTableSupported !== null) return maintenanceRecordsTableSupported
+
+  const { error } = await supabase.from('maintenance_records').select('id').limit(1)
+  maintenanceRecordsTableSupported = !(error && (
+    error.code === '42P01'
+    || error.code === 'PGRST205'
+    || error.code === 'PGRST116'
+  ))
+  return maintenanceRecordsTableSupported
 }
 
 function str(val: FormDataEntryValue | null): string {
@@ -69,14 +97,54 @@ function isValidDate(value: string) {
   return /^\d{4}-\d{2}-\d{2}$/.test(value)
 }
 
-function nextDueOn(frequency: ReminderFrequency, from: Date): string {
-  const d = new Date(from)
-  if (frequency === 'weekly') d.setDate(d.getDate() + 7)
-  else if (frequency === 'monthly') { d.setDate(1); d.setMonth(d.getMonth() + 1) }
-  else if (frequency === 'quarterly') { d.setDate(1); d.setMonth(d.getMonth() + 3) }
-  else if (frequency === 'yearly') { d.setDate(1); d.setMonth(d.getMonth() + 12) }
-  else return ''
-  return d.toISOString().slice(0, 10)
+function formatDateUtc(date: Date) {
+  return date.toISOString().slice(0, 10)
+}
+
+function addDays(value: string, days: number) {
+  const date = new Date(`${value}T12:00:00.000Z`)
+  date.setUTCDate(date.getUTCDate() + days)
+  return formatDateUtc(date)
+}
+
+function addMonths(value: string, months: number) {
+  const [yearRaw, monthRaw, dayRaw] = value.split('-')
+  const year = Number(yearRaw)
+  const monthIndex = Number(monthRaw) - 1
+  const day = Number(dayRaw)
+
+  const nextMonth = new Date(Date.UTC(year, monthIndex + months, 1))
+  const lastDay = new Date(Date.UTC(
+    nextMonth.getUTCFullYear(),
+    nextMonth.getUTCMonth() + 1,
+    0,
+  )).getUTCDate()
+  nextMonth.setUTCDate(Math.min(day, lastDay))
+
+  return formatDateUtc(nextMonth)
+}
+
+function nextDueOn(frequency: ReminderFrequency, from: string): string | null {
+  if (frequency === 'weekly') return addDays(from, 7)
+  if (frequency === 'monthly') return addMonths(from, 1)
+  if (frequency === 'quarterly') return addMonths(from, 3)
+  if (frequency === 'yearly') return addMonths(from, 12)
+  return null
+}
+
+function todayDateString() {
+  const now = new Date()
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Phoenix',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
+  const parts = formatter.formatToParts(now)
+  const year = parts.find((part) => part.type === 'year')?.value ?? String(now.getUTCFullYear())
+  const month = parts.find((part) => part.type === 'month')?.value ?? String(now.getUTCMonth() + 1).padStart(2, '0')
+  const day = parts.find((part) => part.type === 'day')?.value ?? String(now.getUTCDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
 }
 
 async function getCurrentUser() {
@@ -99,6 +167,94 @@ async function validateAccount(supabase: AdminClient, accountId: string) {
   return data
 }
 
+async function ensureMutationSupport(supabase: AdminClient) {
+  let supportsHouseholdId: boolean
+  let supportsCreatedBy: boolean
+  let supportsPaused: boolean
+  let supportsRecords: boolean
+
+  try {
+    [supportsHouseholdId, supportsCreatedBy, supportsPaused, supportsRecords] = await Promise.all([
+      supportsHouseholdIdColumn(supabase),
+      supportsCreatedByColumn(supabase),
+      supportsPausedColumn(supabase),
+      supportsMaintenanceRecordsTable(supabase),
+    ])
+  } catch (error) {
+    console.error('probe reminder columns error:', error)
+    return fail('資料庫連線目前不可用，請稍後再試。')
+  }
+
+  if (!supportsRecords) {
+    return fail('保養歷史資料表還沒建立，請先套用 migration。')
+  }
+
+  return {
+    ok: true as const,
+    supportsHouseholdId,
+    supportsCreatedBy,
+    supportsPaused,
+  }
+}
+
+async function createMaintenanceItem(
+  supabase: AdminClient,
+  user: NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>,
+  payload: {
+    name: string
+    category: string | null
+    frequency: ReminderFrequency
+    dueOn: string | null
+    detail: string | null
+    accountId: string | null
+    completedAt: string | null
+  },
+) {
+  const support = await ensureMutationSupport(supabase)
+  if (!support.ok) return support
+
+  const insertPayload: Record<string, string | null | boolean> = {
+    account_id: payload.accountId,
+    name: payload.name,
+    category: payload.category,
+    detail: payload.detail,
+    due_on: payload.dueOn,
+    frequency: payload.frequency,
+    completed_at: payload.completedAt,
+  }
+
+  if (support.supportsPaused) {
+    insertPayload.is_paused = false
+  }
+
+  if (support.supportsHouseholdId) {
+    insertPayload.household_id = await ensureDefaultHouseholdId(supabase, user)
+  }
+
+  if (support.supportsCreatedBy) {
+    insertPayload.created_by = user.id
+  }
+
+  const { data, error } = await supabase
+    .from('maintenance_reminders')
+    .insert(insertPayload)
+    .select('id, household_id, frequency')
+    .single()
+
+  if (error || !data) {
+    return fail(error?.message ?? '保養項目建立失敗。')
+  }
+
+  return {
+    ok: true as const,
+    reminder: {
+      id: data.id as string,
+      householdId: data.household_id as string,
+      frequency: data.frequency as ReminderFrequency,
+    },
+  }
+}
+
 export async function createMaintenanceReminder(
   formData: FormData,
 ): Promise<CreateMaintenanceReminderResult> {
@@ -106,71 +262,197 @@ export async function createMaintenanceReminder(
   if (!supabase) return fail('資料庫連線目前不可用，請稍後再試。')
 
   const user = await getCurrentUser()
-  if (!user) return fail('請先登入再新增提醒。')
+  if (!user) return fail('請先登入再新增保養項目。')
 
   const name = str(formData.get('name'))
-  if (!name) return fail('事項名稱必填。')
+  if (!name) return fail('項目名稱必填。')
 
   const category = nullableStr(formData.get('category'))
   if (category && !VALID_CATEGORIES.has(category)) return fail('類別設定不正確。')
 
   const frequency = str(formData.get('frequency')) as ReminderFrequency
-  if (!VALID_FREQUENCIES.has(frequency)) return fail('頻率設定不正確。')
+  if (!VALID_FREQUENCIES.has(frequency)) return fail('週期設定不正確。')
 
-  const dueOn = str(formData.get('due_on'))
-  if (!isValidDate(dueOn)) return fail('下次提醒日期必填。')
+  const dueOn = nullableStr(formData.get('due_on'))
+  if (dueOn && !isValidDate(dueOn)) return fail('下次日期格式不正確。')
 
   const detail = nullableStr(formData.get('detail'))
-
-  const accountIdRaw = nullableStr(formData.get('account_id'))
-  if (accountIdRaw) {
-    const account = await validateAccount(supabase, accountIdRaw)
+  const accountId = nullableStr(formData.get('account_id'))
+  if (accountId) {
+    const account = await validateAccount(supabase, accountId)
     if (!account) return fail('找不到該帳戶，請重新選擇。')
   }
 
-  let supportsHouseholdId: boolean
-  let supportsCreatedBy: boolean
-  try {
-    [supportsHouseholdId, supportsCreatedBy] = await Promise.all([
-      supportsHouseholdIdColumn(supabase),
-      supportsCreatedByColumn(supabase),
-    ])
-  } catch (error) {
-    console.error('probe reminder columns error:', error)
-    return fail('資料庫連線目前不可用，請稍後再試。')
-  }
-
-  const payload: Record<string, string | null> = {
-    account_id: accountIdRaw,
+  const result = await createMaintenanceItem(supabase, user, {
     name,
     category,
-    detail,
-    due_on: dueOn,
     frequency,
-    completed_at: null,
+    dueOn,
+    detail,
+    accountId,
+    completedAt: null,
+  })
+
+  if (!result.ok) return result
+
+  revalidateMaintenanceViews()
+  return { ok: true }
+}
+
+async function resolveReminderForRecord(
+  supabase: AdminClient,
+  user: NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>,
+  formData: FormData,
+  completedOn: string,
+) {
+  const reminderId = str(formData.get('reminder_id'))
+  if (reminderId) {
+    const support = await ensureMutationSupport(supabase)
+    if (!support.ok) return support
+
+    const selectColumns = [
+      'id',
+      'household_id',
+      'frequency',
+      'account_id',
+      'completed_at',
+      support.supportsPaused ? 'is_paused' : null,
+    ]
+      .filter(Boolean)
+      .join(', ')
+
+    const { data, error } = await supabase
+      .from('maintenance_reminders')
+      .select(selectColumns)
+      .eq('id', reminderId)
+      .maybeSingle()
+
+    if (error || !data) return fail('找不到該保養項目。')
+    const row = data as unknown as Record<string, unknown>
+    if (row.completed_at) return fail('這個保養項目已經結束。')
+    if (support.supportsPaused && row.is_paused) return fail('這個保養項目目前已暫停。')
+
+    return {
+      ok: true as const,
+      reminder: {
+        id: row.id as string,
+        householdId: row.household_id as string,
+        frequency: row.frequency as ReminderFrequency,
+      },
+      supportsPaused: support.supportsPaused,
+    }
   }
 
-  if (supportsHouseholdId) {
-    payload.household_id = await ensureDefaultHouseholdId(supabase, user)
+  const name = str(formData.get('name'))
+  if (!name) return fail('項目名稱必填。')
+
+  const category = nullableStr(formData.get('category'))
+  if (category && !VALID_CATEGORIES.has(category)) return fail('類別設定不正確。')
+
+  const frequency = str(formData.get('frequency')) as ReminderFrequency
+  if (!VALID_FREQUENCIES.has(frequency)) return fail('週期設定不正確。')
+
+  const accountId = nullableStr(formData.get('account_id'))
+  if (accountId) {
+    const account = await validateAccount(supabase, accountId)
+    if (!account) return fail('找不到該帳戶，請重新選擇。')
   }
-  if (supportsCreatedBy) {
-    payload.created_by = user.id
+
+  const created = await createMaintenanceItem(supabase, user, {
+    name,
+    category,
+    frequency,
+    dueOn: nextDueOn(frequency, completedOn),
+    detail: nullableStr(formData.get('detail')),
+    accountId,
+    completedAt: frequency === 'once' ? new Date().toISOString() : null,
+  })
+
+  if (!created.ok) return created
+
+  return {
+    ok: true as const,
+    reminder: created.reminder,
+    supportsPaused: true,
   }
+}
 
-  const { error } = await supabase.from('maintenance_reminders').insert(payload)
-
-  if (error) return fail(error.message)
-
-  revalidatePath('/reminders')
-  revalidatePath('/ledger/new')
+function revalidateMaintenanceViews() {
   revalidatePath('/')
+  revalidatePath('/ledger')
+  revalidatePath('/ledger/new')
+  revalidatePath('/reminders')
+}
 
+export async function saveMaintenanceRecord(
+  formData: FormData,
+): Promise<SaveMaintenanceRecordResult> {
+  const supabase = createAdminClient()
+  if (!supabase) return fail('資料庫連線目前不可用，請稍後再試。')
+
+  const user = await getCurrentUser()
+  if (!user) return fail('請先登入。')
+
+  const completedOn = str(formData.get('completed_on'))
+  if (!isValidDate(completedOn)) return fail('完成日期必填。')
+
+  const note = nullableStr(formData.get('note'))
+  const resolved = await resolveReminderForRecord(supabase, user, formData, completedOn)
+  if (!resolved.ok) return resolved
+
+  const support = await ensureMutationSupport(supabase)
+  if (!support.ok) return support
+
+  const { error: recordError } = await supabase
+    .from('maintenance_records')
+    .insert({
+      household_id: resolved.reminder.householdId,
+      reminder_id: resolved.reminder.id,
+      created_by: user.id,
+      completed_on: completedOn,
+      note,
+    })
+
+  if (recordError) return fail(recordError.message)
+
+  const nextDue = nextDueOn(resolved.reminder.frequency, completedOn)
+  const updatePayload: Record<string, string | null | boolean> = {
+    due_on: nextDue,
+    completed_at: resolved.reminder.frequency === 'once' ? new Date().toISOString() : null,
+  }
+
+  if (support.supportsPaused) {
+    updatePayload.is_paused = false
+  }
+
+  const { error: updateError } = await supabase
+    .from('maintenance_reminders')
+    .update(updatePayload)
+    .eq('id', resolved.reminder.id)
+
+  if (updateError) return fail(updateError.message)
+
+  revalidateMaintenanceViews()
   return { ok: true }
 }
 
 export async function completeReminder(
   formData: FormData,
 ): Promise<CompleteReminderResult> {
+  const reminderId = str(formData.get('reminder_id'))
+  if (!reminderId) return fail('找不到保養項目 ID。')
+
+  const completedOn = str(formData.get('completed_on')) || todayDateString()
+  const payload = new FormData()
+  payload.set('reminder_id', reminderId)
+  payload.set('completed_on', completedOn)
+
+  return saveMaintenanceRecord(payload)
+}
+
+export async function setReminderPaused(
+  formData: FormData,
+): Promise<ReminderMutationResult> {
   const supabase = createAdminClient()
   if (!supabase) return fail('資料庫連線目前不可用，請稍後再試。')
 
@@ -178,39 +460,43 @@ export async function completeReminder(
   if (!user) return fail('請先登入。')
 
   const reminderId = str(formData.get('reminder_id'))
-  if (!reminderId) return fail('找不到提醒 ID。')
+  if (!reminderId) return fail('找不到保養項目 ID。')
 
-  const { data: reminder, error: fetchErr } = await supabase
+  const paused = str(formData.get('paused')) === 'true'
+  const support = await ensureMutationSupport(supabase)
+  if (!support.ok) return support
+  if (!support.supportsPaused) return fail('目前資料庫還不支援暫停功能。')
+
+  const { error } = await supabase
     .from('maintenance_reminders')
-    .select('id, frequency, due_on')
+    .update({ is_paused: paused })
     .eq('id', reminderId)
-    .maybeSingle()
 
-  if (fetchErr || !reminder) return fail('找不到該提醒。')
+  if (error) return fail(error.message)
 
-  const frequency = reminder.frequency as ReminderFrequency
-  const now = new Date()
-  const fromDate = reminder.due_on ? new Date(reminder.due_on + 'T12:00:00') : now
+  revalidateMaintenanceViews()
+  return { ok: true }
+}
 
-  if (frequency === 'once') {
-    // 一次性：直接標記完成
-    const { error } = await supabase
-      .from('maintenance_reminders')
-      .update({ completed_at: now.toISOString() })
-      .eq('id', reminderId)
-    if (error) return fail(error.message)
-  } else {
-    // 重複性：重置 due_on，清除 completed_at
-    const next = nextDueOn(frequency, fromDate)
-    const { error } = await supabase
-      .from('maintenance_reminders')
-      .update({ completed_at: null, due_on: next })
-      .eq('id', reminderId)
-    if (error) return fail(error.message)
-  }
+export async function deleteReminder(
+  formData: FormData,
+): Promise<ReminderMutationResult> {
+  const supabase = createAdminClient()
+  if (!supabase) return fail('資料庫連線目前不可用，請稍後再試。')
 
-  revalidatePath('/reminders')
-  revalidatePath('/')
+  const user = await getCurrentUser()
+  if (!user) return fail('請先登入。')
 
+  const reminderId = str(formData.get('reminder_id'))
+  if (!reminderId) return fail('找不到保養項目 ID。')
+
+  const { error } = await supabase
+    .from('maintenance_reminders')
+    .delete()
+    .eq('id', reminderId)
+
+  if (error) return fail(error.message)
+
+  revalidateMaintenanceViews()
   return { ok: true }
 }

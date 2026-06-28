@@ -9,6 +9,7 @@ import {
   getTransactionById,
 } from '@/lib/family-transactions'
 import { getTwdRateTable } from '@/lib/exchange-rates'
+import { getMaintenanceItemsForForm } from '@/lib/reminders-db'
 import { TransactionForm } from '@/app/ledger/_components/TransactionForm'
 import { BottomNav } from '@/components/BottomNav'
 import { shellBackgroundClass } from '@/components/PageShell'
@@ -47,8 +48,9 @@ export default async function EditTransactionPage({ params, searchParams }: Page
   const transaction = await getTransactionById(decodeURIComponent(id))
   if (!transaction) notFound()
 
-  const [accounts, categories, merchants, merchantGroups, rateTable, recentAccountIdsByKind] = await Promise.all([
+  const [accounts, maintenanceItems, categories, merchants, merchantGroups, rateTable, recentAccountIdsByKind] = await Promise.all([
     getActiveAccounts(),
+    getMaintenanceItemsForForm(),
     getAllCategories(),
     getAllMerchants(),
     getMerchantGroups(),
@@ -75,6 +77,7 @@ export default async function EditTransactionPage({ params, searchParams }: Page
 
           <TransactionForm
             accounts={accounts}
+            maintenanceItems={maintenanceItems}
             categories={categories}
             merchants={merchants}
             merchantGroups={merchantGroups}
