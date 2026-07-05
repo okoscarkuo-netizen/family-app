@@ -6,7 +6,7 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import { ensureDefaultHouseholdId } from '@/lib/household'
 
 type AdminClient = NonNullable<ReturnType<typeof createAdminClient>>
-type ReminderFrequency = 'once' | 'weekly' | 'monthly' | 'quarterly' | 'yearly'
+type ReminderFrequency = 'once' | 'weekly' | 'monthly' | 'quarterly' | 'semiannual' | 'yearly'
 
 export type CreateMaintenanceReminderResult =
   | { ok: true }
@@ -29,6 +29,7 @@ const VALID_FREQUENCIES = new Set<ReminderFrequency>([
   'weekly',
   'monthly',
   'quarterly',
+  'semiannual',
   'yearly',
 ])
 
@@ -128,6 +129,7 @@ function nextDueOn(frequency: ReminderFrequency, from: string): string | null {
   if (frequency === 'weekly') return addDays(from, 7)
   if (frequency === 'monthly') return addMonths(from, 1)
   if (frequency === 'quarterly') return addMonths(from, 3)
+  if (frequency === 'semiannual') return addMonths(from, 6)
   if (frequency === 'yearly') return addMonths(from, 12)
   return null
 }

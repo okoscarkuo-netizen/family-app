@@ -10,6 +10,7 @@ const FREQUENCY_LABELS: Record<string, string> = {
   weekly: '每週',
   monthly: '每月',
   quarterly: '每三個月',
+  semiannual: '每半年',
   yearly: '每年',
 }
 

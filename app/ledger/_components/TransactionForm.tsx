@@ -50,12 +50,13 @@ const KIND_LABELS: Record<Kind, string> = {
 
 const CURRENCIES = ['TWD', 'USD', 'JPY'] as const
 const OWNERS = ['Oscar', 'Livia'] as const
-const REMINDER_FREQUENCIES = ['once', 'weekly', 'monthly', 'quarterly', 'yearly'] as const
+const REMINDER_FREQUENCIES = ['once', 'weekly', 'monthly', 'quarterly', 'semiannual', 'yearly'] as const
 const REMINDER_FREQUENCY_LABELS: Record<(typeof REMINDER_FREQUENCIES)[number], string> = {
   once: '一次',
   weekly: '每週',
   monthly: '每月',
   quarterly: '每三個月',
+  semiannual: '每半年',
   yearly: '每年',
 }
 const REMINDER_CATEGORIES = ['車子', '房屋', '帳單', '家事', '其他'] as const

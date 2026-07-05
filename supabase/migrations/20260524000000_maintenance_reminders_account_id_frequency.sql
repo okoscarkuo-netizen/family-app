@@ -1,6 +1,6 @@
 do $$
 begin
-  create type public.reminder_frequency as enum ('once', 'weekly', 'monthly', 'quarterly', 'yearly');
+  create type public.reminder_frequency as enum ('once', 'weekly', 'monthly', 'quarterly', 'semiannual', 'yearly');
 exception
   when duplicate_object then null;
 end

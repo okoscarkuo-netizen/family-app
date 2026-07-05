@@ -2,7 +2,7 @@ create extension if not exists "pgcrypto";
 
 create type household_role as enum ('owner', 'member');
 create type transaction_kind as enum ('income', 'expense');
-create type reminder_frequency as enum ('once', 'weekly', 'monthly', 'quarterly', 'yearly');
+create type reminder_frequency as enum ('once', 'weekly', 'monthly', 'quarterly', 'semiannual', 'yearly');
 
 create table public.households (
   id uuid primary key default gen_random_uuid(),

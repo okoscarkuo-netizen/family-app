@@ -1,7 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
 import { createClient } from '@/lib/supabase/server'
 
-export type ReminderFrequency = 'once' | 'weekly' | 'monthly' | 'quarterly' | 'yearly'
+export type ReminderFrequency = 'once' | 'weekly' | 'monthly' | 'quarterly' | 'semiannual' | 'yearly'
 
 export type ReminderItem = {
   id: string
@@ -51,6 +51,7 @@ function isReminderFrequency(value: string): value is ReminderFrequency {
     || value === 'weekly'
     || value === 'monthly'
     || value === 'quarterly'
+    || value === 'semiannual'
     || value === 'yearly'
 }
 

@@ -18,6 +18,7 @@ function frequencyLabel(value: string) {
   if (value === 'weekly') return '每週'
   if (value === 'monthly') return '每月'
   if (value === 'quarterly') return '每季'
+  if (value === 'semiannual') return '每半年'
   if (value === 'yearly') return '每年'
   return value
 }
