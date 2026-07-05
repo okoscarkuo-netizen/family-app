@@ -34,6 +34,14 @@ type ParsedReminderDraftFields = {
   accountId: string | null
 }
 
+type MaintenanceRecordRow = {
+  id: string
+  reminder_id: string
+  completed_on: string
+  note: string | null
+  created_at: string
+}
+
 const VALID_FREQUENCIES = new Set<ReminderFrequency>([
   'once',
   'weekly',
@@ -450,6 +458,76 @@ function revalidateMaintenanceViews() {
   revalidatePath('/reminders')
 }
 
+function revalidateMaintenanceDetailPaths(reminderId: string, recordId?: string) {
+  revalidateMaintenanceViews()
+  revalidatePath(`/reminders/${encodeURIComponent(reminderId)}`)
+  if (recordId) {
+    revalidatePath(`/reminders/records/${encodeURIComponent(recordId)}`)
+  }
+}
+
+async function syncReminderAfterRecordMutation(
+  supabase: AdminClient,
+  reminderId: string,
+  fallbackDueOn: string | null,
+) {
+  const support = await ensureMutationSupport(supabase)
+  if (!support.ok) return support
+
+  const selectColumns = [
+    'id',
+    'frequency',
+    'completed_at',
+  ]
+    .filter(Boolean)
+    .join(', ')
+
+  const { data: reminderRow, error: reminderError } = await supabase
+    .from('maintenance_reminders')
+    .select(selectColumns)
+    .eq('id', reminderId)
+    .maybeSingle()
+
+  if (reminderError || !reminderRow) return fail('找不到對應的保養項目。')
+
+  const { data: latestRow, error: latestError } = await supabase
+    .from('maintenance_records')
+    .select('id, reminder_id, completed_on, note, created_at')
+    .eq('reminder_id', reminderId)
+    .order('completed_on', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (latestError && latestError.code !== 'PGRST116') {
+    return fail(latestError.message)
+  }
+
+  const reminder = reminderRow as unknown as Record<string, unknown>
+  const latest = latestRow as MaintenanceRecordRow | null
+  const frequency = reminder.frequency as ReminderFrequency
+
+  const updatePayload: Record<string, string | null> = latest
+    ? {
+        due_on: nextDueOn(frequency, latest.completed_on),
+        completed_at: frequency === 'once'
+          ? String(reminder.completed_at ?? latest.created_at ?? new Date().toISOString())
+          : null,
+      }
+    : {
+        due_on: fallbackDueOn,
+        completed_at: null,
+      }
+
+  const { error: updateError } = await supabase
+    .from('maintenance_reminders')
+    .update(updatePayload)
+    .eq('id', reminderId)
+
+  if (updateError) return fail(updateError.message)
+  return { ok: true as const }
+}
+
 export async function saveMaintenanceRecord(
   formData: FormData,
 ): Promise<SaveMaintenanceRecordResult> {
@@ -583,6 +661,79 @@ export async function updateReminder(
   if (updateError) return fail(updateError.message)
 
   revalidateMaintenanceViews()
+  return { ok: true }
+}
+
+export async function updateMaintenanceRecord(
+  recordId: string,
+  formData: FormData,
+): Promise<ReminderMutationResult> {
+  const supabase = createAdminClient()
+  if (!supabase) return fail('資料庫連線目前不可用，請稍後再試。')
+
+  const user = await getCurrentUser()
+  if (!user) return fail('請先登入。')
+
+  const completedOn = str(formData.get('completed_on'))
+  if (!isValidDate(completedOn)) return fail('完成日期必填。')
+  const note = nullableStr(formData.get('note'))
+
+  const { data: existing, error: existingError } = await supabase
+    .from('maintenance_records')
+    .select('id, reminder_id, completed_on')
+    .eq('id', recordId)
+    .maybeSingle()
+
+  if (existingError || !existing) return fail('找不到這筆保養紀錄。')
+
+  const reminderId = String(existing.reminder_id)
+
+  const { error: updateError } = await supabase
+    .from('maintenance_records')
+    .update({
+      completed_on: completedOn,
+      note,
+    })
+    .eq('id', recordId)
+
+  if (updateError) return fail(updateError.message)
+
+  const syncResult = await syncReminderAfterRecordMutation(supabase, reminderId, completedOn)
+  if (!syncResult.ok) return syncResult
+
+  revalidateMaintenanceDetailPaths(reminderId, recordId)
+  return { ok: true }
+}
+
+export async function deleteMaintenanceRecord(recordId: string): Promise<ReminderMutationResult> {
+  const supabase = createAdminClient()
+  if (!supabase) return fail('資料庫連線目前不可用，請稍後再試。')
+
+  const user = await getCurrentUser()
+  if (!user) return fail('請先登入。')
+
+  const { data: existing, error: existingError } = await supabase
+    .from('maintenance_records')
+    .select('id, reminder_id, completed_on')
+    .eq('id', recordId)
+    .maybeSingle()
+
+  if (existingError || !existing) return fail('找不到這筆保養紀錄。')
+
+  const reminderId = String(existing.reminder_id)
+  const fallbackDueOn = String(existing.completed_on ?? '') || null
+
+  const { error: deleteError } = await supabase
+    .from('maintenance_records')
+    .delete()
+    .eq('id', recordId)
+
+  if (deleteError) return fail(deleteError.message)
+
+  const syncResult = await syncReminderAfterRecordMutation(supabase, reminderId, fallbackDueOn)
+  if (!syncResult.ok) return syncResult
+
+  revalidateMaintenanceDetailPaths(reminderId, recordId)
   return { ok: true }
 }
 

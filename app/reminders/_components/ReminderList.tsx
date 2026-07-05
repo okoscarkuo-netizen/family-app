@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import type { FormEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useState, useTransition } from 'react'
@@ -358,7 +359,10 @@ export function ReminderList({
                               : 'border-[#ece8e1]'
                         }`}
                       >
-                        <div className="flex items-start justify-between gap-3">
+                        <Link
+                          href={`/reminders/${encodeURIComponent(item.id)}`}
+                          className="flex items-start justify-between gap-3 rounded-xl transition hover:bg-[#fafaf8] active:bg-[#f4f4f2]"
+                        >
                           <div className="min-w-0 flex-1">
                             <p className="text-[0.95rem] font-black text-[#202124]">{item.name}</p>
                             <p className="mt-0.5 text-[0.7rem] font-semibold text-[#8f959c]">
@@ -396,7 +400,7 @@ export function ReminderList({
                           }`}>
                             {urgency === 'overdue' ? '逾期' : urgency === 'soon' ? '快到' : '正常'}
                           </span>
-                        </div>
+                        </Link>
 
                         <div className="mt-3 flex flex-wrap gap-2">
                           <button
@@ -463,7 +467,10 @@ export function ReminderList({
 
                 return (
                   <div key={item.id} className="rounded-[1.25rem] border border-[#ece8e1] bg-white px-4 py-3 shadow-sm">
-                  <div className="flex items-start justify-between gap-3">
+                  <Link
+                    href={`/reminders/${encodeURIComponent(item.id)}`}
+                    className="flex items-start justify-between gap-3 rounded-xl transition hover:bg-[#fafaf8] active:bg-[#f4f4f2]"
+                  >
                     <div className="min-w-0 flex-1">
                       <p className="text-[0.95rem] font-black text-[#202124]">{item.name}</p>
                       <p className="mt-0.5 text-[0.7rem] font-semibold text-[#8f959c]">
@@ -487,7 +494,7 @@ export function ReminderList({
                       </div>
                     </div>
                     <span className="text-[0.72rem] font-black text-slate-400">已暫停</span>
-                  </div>
+                  </Link>
 
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button

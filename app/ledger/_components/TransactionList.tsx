@@ -235,7 +235,7 @@ export function TransactionList({
               const metaLine = getMetaLine(tx, accountNames)
               const isMaintenance = isMaintenanceRecord(tx)
               const href = isMaintenance
-                ? '/reminders'
+                ? `/reminders/records/${encodeURIComponent(tx.id)}${returnUrl ? `?from=${encodeURIComponent(returnUrl)}` : ''}`
                 : `/ledger/${encodeURIComponent(tx.id)}${returnUrl ? `?from=${encodeURIComponent(returnUrl)}` : ''}`
 
               return (

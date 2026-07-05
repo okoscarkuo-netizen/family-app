@@ -19,6 +19,10 @@ export type ReminderItem = {
   isPaused: boolean
 }
 
+export type ReminderDetail = ReminderItem & {
+  historyCount: number
+}
+
 export type ReminderGroup = {
   category: string
   items: ReminderItem[]
@@ -244,6 +248,65 @@ export async function getReminders(): Promise<ReminderItem[]> {
   }))
 }
 
+export async function getReminderById(id: string): Promise<ReminderDetail | null> {
+  const authClient = await createClient()
+  const { data: { user } } = await authClient.auth.getUser()
+  if (!user) return null
+
+  const supabase = createAdminClient()
+  if (!supabase) return null
+
+  const supportsPaused = await supportsReminderPausedColumn()
+  const selectColumns = [
+    'id',
+    'name',
+    'detail',
+    'category',
+    'due_on',
+    'frequency',
+    'account_id',
+    'completed_at',
+    supportsPaused ? 'is_paused' : null,
+  ]
+    .filter(Boolean)
+    .join(', ')
+
+  const { data, error } = await supabase
+    .from('maintenance_reminders')
+    .select(selectColumns)
+    .eq('id', id)
+    .maybeSingle()
+
+  if (error) {
+    console.error('getReminderById error:', error.message)
+    return null
+  }
+  if (!data) return null
+
+  const row = data as unknown as ReminderRow
+  const accountIds = row.account_id ? [row.account_id] : []
+  const [accountNames, latestCompletedOnMap, historyCount] = await Promise.all([
+    getAccountNameMap(accountIds),
+    getLatestCompletedOnMap([row.id]),
+    getMaintenanceRecordCountByReminderId(row.id),
+  ])
+
+  return {
+    id: row.id,
+    name: row.name,
+    detail: row.detail ?? null,
+    category: row.category ?? null,
+    lastCompletedOn: latestCompletedOnMap.get(row.id) ?? null,
+    dueOn: row.due_on ?? null,
+    frequency: isReminderFrequency(row.frequency) ? row.frequency : 'quarterly',
+    accountId: row.account_id ?? null,
+    accountName: row.account_id ? accountNames.get(row.account_id) ?? null : null,
+    completedAt: row.completed_at ?? null,
+    isPaused: Boolean(row.is_paused),
+    historyCount,
+  }
+}
+
 export async function getMaintenanceItemsForForm(): Promise<MaintenanceFormItem[]> {
   const authClient = await createClient()
   const { data: { user } } = await authClient.auth.getUser()
@@ -287,10 +350,29 @@ type MaintenanceRecordRow = {
   created_at: string
 }
 
+async function getMaintenanceRecordCountByReminderId(reminderId: string): Promise<number> {
+  const supabase = createAdminClient()
+  if (!supabase) return 0
+  if (!(await supportsMaintenanceRecordsTable())) return 0
+
+  const { count, error } = await supabase
+    .from('maintenance_records')
+    .select('id', { count: 'exact', head: true })
+    .eq('reminder_id', reminderId)
+
+  if (error) {
+    console.error('getMaintenanceRecordCountByReminderId error:', error.message)
+    return 0
+  }
+
+  return count ?? 0
+}
+
 export async function getMaintenanceRecords(params?: {
   startDate?: string
   endDate?: string
   accountId?: string
+  reminderId?: string
   query?: string
 }): Promise<MaintenanceRecord[]> {
   const authClient = await createClient()
@@ -310,6 +392,7 @@ export async function getMaintenanceRecords(params?: {
 
   if (params?.startDate) query = query.gte('completed_on', params.startDate)
   if (params?.endDate) query = query.lte('completed_on', params.endDate)
+  if (params?.reminderId) query = query.eq('reminder_id', params.reminderId)
 
   const { data, error } = await query
   if (error) {
@@ -387,6 +470,69 @@ export async function getMaintenanceRecords(params?: {
 
       return [record]
     })
+}
+
+export async function getMaintenanceRecordById(id: string): Promise<MaintenanceRecord | null> {
+  const authClient = await createClient()
+  const { data: { user } } = await authClient.auth.getUser()
+  if (!user) return null
+
+  if (!(await supportsMaintenanceRecordsTable())) return null
+
+  const supabase = createAdminClient()
+  if (!supabase) return null
+
+  const { data, error } = await supabase
+    .from('maintenance_records')
+    .select('id, reminder_id, completed_on, note, created_at')
+    .eq('id', id)
+    .maybeSingle()
+
+  if (error) {
+    console.error('getMaintenanceRecordById error:', error.message)
+    return null
+  }
+  if (!data) return null
+
+  const row = data as MaintenanceRecordRow
+  const { data: reminderRow, error: reminderError } = await supabase
+    .from('maintenance_reminders')
+    .select('id, name, category, frequency, account_id')
+    .eq('id', row.reminder_id)
+    .maybeSingle()
+
+  if (reminderError) {
+    console.error('getMaintenanceRecordById reminder fetch error:', reminderError.message)
+    return null
+  }
+  if (!reminderRow) return null
+
+  const reminder = {
+    id: reminderRow.id as string,
+    name: reminderRow.name as string,
+    category: (reminderRow.category as string | null) ?? null,
+    frequency: isReminderFrequency(reminderRow.frequency as string)
+      ? reminderRow.frequency as ReminderFrequency
+      : 'quarterly',
+    accountId: (reminderRow.account_id as string | null) ?? null,
+  }
+
+  const accountNames = await getAccountNameMap(reminder.accountId ? [reminder.accountId] : [])
+
+  return {
+    id: row.id,
+    type: 'maintenance',
+    reminderId: reminder.id,
+    name: reminder.name,
+    category: reminder.category,
+    frequency: reminder.frequency,
+    accountId: reminder.accountId,
+    accountName: reminder.accountId ? accountNames.get(reminder.accountId) ?? null : null,
+    note: row.note ?? null,
+    completedOn: row.completed_on,
+    occurred_on: row.completed_on,
+    created_at: row.created_at,
+  }
 }
 
 export function groupRemindersByCategory(reminders: ReminderItem[]): ReminderGroup[] {
