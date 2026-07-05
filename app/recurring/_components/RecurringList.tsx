@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useOptimistic, useState, useTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import type { RecurringTransaction } from '@/lib/recurring-db'
@@ -125,6 +126,12 @@ export function RecurringList({ items }: { items: RecurringTransaction[] }) {
                 下次：<span className="text-slate-900">{it.isActive ? it.nextDueDate : '已暫停'}</span>　·　{remaining}
               </div>
               <div className="flex gap-1.5">
+                <Link
+                  href={`/recurring/${encodeURIComponent(it.id)}`}
+                  className="rounded-full bg-[#eef3ff] px-3 py-1 text-[0.7rem] font-black text-[#3657b7]"
+                >
+                  編輯
+                </Link>
                 <button
                   type="button"
                   onClick={() => handleToggle(it.id, it.isActive)}
