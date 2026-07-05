@@ -21,6 +21,8 @@
 
 | 日期 時間 | 工具 | 分支 | 做什麼 | 狀態 |
 |---|---|---|---|---|
+| 2026-06-09 | Claude | feat/app-smoothness | PWA start_url 改成 /ledger/new（開 App 直接進記一筆） | 完成 |
+| 2026-06-05 09:00 | Claude | feat/app-smoothness | 實作自動備份功能（/more/backup + Gmail SMTP + Vercel Cron）。程式碼完成 11 commits，待使用者：套用 migration、設 Gmail App Password、設 Vercel env、push 部署 | 暫停 |
 | 2026-06-02 01:00 | Codex | feat/app-smoothness | 套用 recurring migration 到 Supabase production | 完成 |
 | 2026-06-02 00:27 | Codex | feat/app-smoothness | 檢查詳情頁週期欄位是否需要套 Supabase migration，並修正週期 migration 帳戶欄位型別 | 完成 |
 | 2026-06-02 00:27 | Codex | feat/app-smoothness | 新增流水交易詳情頁：可改商家/帳戶/備註/週期，並提供編輯、複製、刪除 | 完成 |

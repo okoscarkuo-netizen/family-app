@@ -98,6 +98,23 @@
 
 ---
 
+### 🔴 雷 9：記一筆勾了週期，但建立條件把合法交易擋掉
+
+**症狀**：使用者剛存完有勾「週期」的交易，但「定期交易」分頁是空的，看起來像沒存到。
+
+**原因**：前端把 `resolvedCategoryId && resolvedAccountId` 當成建立週期模板的必要條件。結果：
+- `transfer` 本來就沒有分類，所以永遠不會建立 recurring template
+- 一般收入/支出如果允許空分類，也會被靜默跳過
+- 畫面只會存一般交易，不會提醒週期那半段失敗
+
+**正確做法**：
+- 建立 recurring template 時只檢查真正必填的欄位
+- `transfer` 要求來源帳戶 + 目的帳戶，不要要求分類
+- `expense` / `income` 允許 `categoryId = null`，不要因為空分類就整段不建立
+- 參考 `app/ledger/_components/TransactionForm.tsx` 的 `canCreateRecurringTemplate` 判斷
+
+---
+
 ### 🟡 雷 5：跨幣別直接加總是錯的
 
 **正確做法**：所有跨幣別加總一定要先用 `convertToTwd()` 換算成 TWD 再加。

@@ -2220,6 +2220,12 @@ export function TransactionForm({
   const selectedCategory = categoryById.get(resolvedCategoryId) ?? null
   const selectedAccount = accountById.get(resolvedAccountId) ?? null
   const selectedToAccount = accountById.get(resolvedToAccountId) ?? null
+  const canCreateRecurringTemplate =
+    !isEditMode
+    && recurringOn
+    && kind !== 'reminder'
+    && Boolean(resolvedAccountId)
+    && (kind !== 'transfer' || Boolean(resolvedToAccountId))
   const resolvedReminderAccountId = accountById.has(accountId) ? accountId : ''
   const selectedReminderAccount = accountById.get(resolvedReminderAccountId) ?? null
   const effectiveMaintenanceMode = maintenanceItems.length === 0 ? 'new' : maintenanceMode
@@ -2345,7 +2351,7 @@ export function TransactionForm({
       formData.set('note', note)
       if (selectedCategory) formData.set('category_name', selectedCategory.name)
 
-      const recurringPayload = !isEditMode && recurringOn && resolvedCategoryId && resolvedAccountId
+      const recurringPayload = canCreateRecurringTemplate
         ? {
             name: merchant.trim() || (selectedCategory?.name ?? '定期交易'),
             kind: kind as 'income' | 'expense' | 'transfer',
@@ -2355,7 +2361,7 @@ export function TransactionForm({
             targetAccountId: kind === 'transfer' ? (resolvedToAccountId || null) : null,
             targetAmount: kind === 'transfer' ? transferTargetAmount : null,
             targetCurrency: kind === 'transfer' ? transferTargetCurrency : null,
-            categoryId: resolvedCategoryId,
+            categoryId: resolvedCategoryId || null,
             merchantId: null,
             owner,
             frequency: recurringFrequency,
@@ -2471,7 +2477,7 @@ export function TransactionForm({
       }
       submittedRef.current = true
 
-      if (!isEditMode && recurringOn && kind !== 'reminder' && resolvedCategoryId && resolvedAccountId) {
+      if (canCreateRecurringTemplate) {
         const startDate = occurredAt.slice(0, 10)
         const recurringResult = await createRecurringTransaction({
           name: merchant.trim() || (selectedCategory?.name ?? '定期交易'),
@@ -2482,7 +2488,7 @@ export function TransactionForm({
           targetAccountId: kind === 'transfer' ? (resolvedToAccountId || null) : null,
           targetAmount: kind === 'transfer' ? transferTargetAmount : null,
           targetCurrency: kind === 'transfer' ? transferTargetCurrency : null,
-          categoryId: resolvedCategoryId,
+          categoryId: resolvedCategoryId || null,
           merchantId: null,
           owner,
           frequency: recurringFrequency,

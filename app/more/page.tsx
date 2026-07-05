@@ -19,6 +19,11 @@ const quickLinks = [
     description: '管理已建立的定期規則（暫停 / 編輯 / 刪除）。',
   },
   {
+    href: '/more/backup',
+    title: '資料備份',
+    description: '自動把全部資料打包成 Excel 寄到信箱，可切換每兩週或每月。',
+  },
+  {
     href: '/more/passkeys',
     title: 'Passkey 管理',
     description: '用指紋或 Face ID 快速登入，管理已註冊的裝置。',
