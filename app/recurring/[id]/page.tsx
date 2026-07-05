@@ -1,24 +1,9 @@
 import { notFound } from 'next/navigation'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { getActiveAccountsForForm } from '@/lib/accounts-db'
 import { getAllCategories, getAllMerchants, getCategoryPath, type FamilyCategory } from '@/lib/family-transactions'
 import { getRecurringTransactionById } from '@/lib/recurring-db'
 import { BottomNav } from '@/components/BottomNav'
 import { RecurringEditor } from '../_components/RecurringEditor'
-import type { FamilyAccount } from '@/lib/finance/types'
-
-async function getActiveAccounts(): Promise<
-  Pick<FamilyAccount, 'id' | 'name' | 'currency' | 'owner' | 'shared' | 'favorite'>[]
-> {
-  const supabase = createAdminClient()
-  if (!supabase) return []
-  const { data } = await supabase
-    .from('family_accounts')
-    .select('id, name, currency, owner, shared, favorite')
-    .eq('is_archived', false)
-    .order('sort_order')
-
-  return (data ?? []) as Pick<FamilyAccount, 'id' | 'name' | 'currency' | 'owner' | 'shared' | 'favorite'>[]
-}
 
 function buildCategoryOptions(categories: FamilyCategory[]) {
   return categories
@@ -41,7 +26,7 @@ export default async function RecurringEditPage({ params }: PageProps) {
   if (!recurring) notFound()
 
   const [accounts, categories, merchants] = await Promise.all([
-    getActiveAccounts(),
+    getActiveAccountsForForm({ includeHidden: true }),
     getAllCategories(),
     getAllMerchants(),
   ])

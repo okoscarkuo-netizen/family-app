@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { getActiveAccountsForForm } from '@/lib/accounts-db'
 import {
   getAllCategories,
   getAllMerchants,
@@ -13,23 +13,6 @@ import { getMaintenanceItemsForForm } from '@/lib/reminders-db'
 import { TransactionForm } from '@/app/ledger/_components/TransactionForm'
 import { BottomNav } from '@/components/BottomNav'
 import { shellBackgroundClass } from '@/components/PageShell'
-import type { FamilyAccount } from '@/lib/finance/types'
-
-async function getActiveAccounts(): Promise<
-  Pick<FamilyAccount, 'id' | 'name' | 'currency' | 'kind' | 'balance' | 'owner' | 'shared' | 'type' | 'favorite'>[]
-> {
-  const supabase = createAdminClient()
-  if (!supabase) return []
-  const { data } = await supabase
-    .from('family_accounts')
-    .select('id, name, currency, kind, balance, owner, shared, type, favorite')
-    .eq('is_archived', false)
-    .order('sort_order')
-  return (data ?? []) as Pick<
-    FamilyAccount,
-    'id' | 'name' | 'currency' | 'kind' | 'balance' | 'owner' | 'shared' | 'type' | 'favorite'
-  >[]
-}
 
 function ledgerHrefForDate(date: string) {
   const match = date.match(/^(\d{4})-(\d{2})/)
@@ -49,7 +32,7 @@ export default async function EditTransactionPage({ params, searchParams }: Page
   if (!transaction) notFound()
 
   const [accounts, maintenanceItems, categories, merchants, merchantGroups, rateTable, recentAccountIdsByKind] = await Promise.all([
-    getActiveAccounts(),
+    getActiveAccountsForForm({ includeHidden: true }),
     getMaintenanceItemsForForm(),
     getAllCategories(),
     getAllMerchants(),

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { createPortal } from 'react-dom'
 import type { KeyboardEvent, PointerEvent } from 'react'
 import { useRouter } from 'next/navigation'
@@ -103,6 +103,14 @@ type Props = {
   returnUrl?: string
   initialKind?: Kind
   recentAccountIdsByKind?: RecentAccountIdsByKind
+  deferReferenceData?: boolean
+}
+
+type DeferredTransactionFormData = {
+  merchants?: FamilyMerchant[]
+  merchantGroups?: FamilyMerchantGroup[]
+  maintenanceItems?: MaintenanceFormItem[]
+  rateTable?: TwdRateTable | null
 }
 
 function currentLocalDateTimeValue() {
@@ -1027,6 +1035,7 @@ function MerchantPickerSheet({
   open,
   merchants,
   merchantGroups,
+  loading,
   value,
   onChange,
   onOpenSettings,
@@ -1035,6 +1044,7 @@ function MerchantPickerSheet({
   open: boolean
   merchants: FamilyMerchant[]
   merchantGroups: FamilyMerchantGroup[]
+  loading: boolean
   value: string
   onChange: (value: string) => void
   onOpenSettings: () => void
@@ -1154,7 +1164,11 @@ function MerchantPickerSheet({
             ) : null}
           </label>
 
-          {merchantPickerGroups.length === 0 ? (
+          {loading ? (
+            <div className="mt-4 rounded-[1.6rem] bg-white/90 px-4 py-10 text-center text-sm font-bold text-slate-400 shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
+              載入商家中...
+            </div>
+          ) : merchantPickerGroups.length === 0 ? (
             <div className="mt-4 rounded-[1.6rem] bg-white/90 px-4 py-10 text-center text-sm font-bold text-slate-400 shadow-[0_16px_34px_rgba(15,23,42,0.08)]">
               還沒有可用的商家
             </div>
@@ -1232,6 +1246,7 @@ function MerchantManagerSheet({
   open,
   groups,
   merchants,
+  loading,
   onGroupUpsert,
   onGroupArchive,
   onMerchantUpsert,
@@ -1240,6 +1255,7 @@ function MerchantManagerSheet({
   open: boolean
   groups: FamilyMerchantGroup[]
   merchants: FamilyMerchant[]
+  loading: boolean
   onGroupUpsert: (group: FamilyMerchantGroup) => void
   onGroupArchive: (groupId: string) => void
   onMerchantUpsert: (merchant: FamilyMerchant, previousName?: string) => void
@@ -1717,7 +1733,13 @@ function MerchantManagerSheet({
           </header>
 
           <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto bg-[#faf7f0] pb-[calc(1.25rem+env(safe-area-inset-bottom))]">
-            {notice ? (
+            {loading ? (
+              <div className="px-4 py-6">
+                <div className="rounded-[1.7rem] border border-[#eee5d8] bg-white px-4 py-8 text-center text-sm font-black text-slate-400 shadow-[0_14px_32px_rgba(15,23,42,0.06)]">
+                  載入商家資料中...
+                </div>
+              </div>
+            ) : notice ? (
               <div className="px-4 pt-4">
                 <div
                   className={`rounded-[1.1rem] px-4 py-3 text-sm font-black shadow-[0_12px_24px_rgba(15,23,42,0.06)] ${
@@ -1731,7 +1753,7 @@ function MerchantManagerSheet({
               </div>
             ) : null}
 
-            <div className="space-y-4 px-4 py-4">
+            {!loading ? <div className="space-y-4 px-4 py-4">
               <section className="grid gap-3">
                 {managerView === 'merchants' ? (
                 <div className="overflow-hidden rounded-[1.7rem] border border-[#eee5d8] bg-white shadow-[0_14px_32px_rgba(15,23,42,0.06)]">
@@ -2025,7 +2047,7 @@ function MerchantManagerSheet({
                   沒有符合搜尋的分類
                 </div>
               )}
-            </div>
+            </div> : null}
           </div>
 
           <div className="shrink-0 border-t border-[#eee5d8] bg-[#faf7f0] px-4 py-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]">
@@ -2060,6 +2082,7 @@ export function TransactionForm({
   returnUrl,
   initialKind: initialKindProp,
   recentAccountIdsByKind,
+  deferReferenceData = false,
 }: Props) {
   const isEditMode = mode === 'edit' && transaction != null
   const seedTransaction = isEditMode ? transaction : copyTransaction
@@ -2100,8 +2123,19 @@ export function TransactionForm({
   const [isMerchantManagerOpen, setIsMerchantManagerOpen] = useState(false)
   const [isKindDragging, setIsKindDragging] = useState(false)
   const [managedCategories] = useState(() => categories)
+  const [managedMaintenanceItems, setManagedMaintenanceItems] = useState(() => maintenanceItems)
   const [managedMerchants, setManagedMerchants] = useState(() => merchants)
   const [managedMerchantGroups, setManagedMerchantGroups] = useState(() => merchantGroups)
+  const [managedRateTable, setManagedRateTable] = useState(() => rateTable ?? null)
+  const [maintenanceDataLoaded, setMaintenanceDataLoaded] = useState(() => !deferReferenceData || maintenanceItems.length > 0)
+  const [merchantDataLoaded, setMerchantDataLoaded] = useState(() => !deferReferenceData || merchants.length > 0 || merchantGroups.length > 0)
+  const [rateTableLoaded, setRateTableLoaded] = useState(() => !deferReferenceData || rateTable != null)
+  const [maintenanceDataLoading, setMaintenanceDataLoading] = useState(false)
+  const [merchantDataLoading, setMerchantDataLoading] = useState(false)
+  const [rateTableLoading, setRateTableLoading] = useState(false)
+  const maintenanceRequestRef = useRef<Promise<void> | null>(null)
+  const merchantRequestRef = useRef<Promise<void> | null>(null)
+  const rateTableRequestRef = useRef<Promise<void> | null>(null)
   const [currency, setCurrency] = useState<Currency>(() => {
     const fallbackCurrency = isCurrency(seedTransaction ? seedTransaction.currency : initialPreset?.currency)
       ? (seedTransaction ? seedTransaction.currency : initialPreset?.currency) as Currency
@@ -2179,12 +2213,12 @@ export function TransactionForm({
   )
   const reminderAccountOptions = accountOptions
   const maintenanceItemOptions = useMemo(
-    () => buildMaintenanceItemOptions(maintenanceItems),
-    [maintenanceItems],
+    () => buildMaintenanceItemOptions(managedMaintenanceItems),
+    [managedMaintenanceItems],
   )
   const maintenanceItemById = useMemo(
-    () => new Map(maintenanceItems.map((item) => [item.id, item])),
-    [maintenanceItems],
+    () => new Map(managedMaintenanceItems.map((item) => [item.id, item])),
+    [managedMaintenanceItems],
   )
   const [showAllAccounts, setShowAllAccounts] = useState(false)
   const frequentAccountIdsByKind = useMemo(() => {
@@ -2228,8 +2262,19 @@ export function TransactionForm({
     && (kind !== 'transfer' || Boolean(resolvedToAccountId))
   const resolvedReminderAccountId = accountById.has(accountId) ? accountId : ''
   const selectedReminderAccount = accountById.get(resolvedReminderAccountId) ?? null
-  const effectiveMaintenanceMode = maintenanceItems.length === 0 ? 'new' : maintenanceMode
-  const effectiveSelectedMaintenanceId = selectedMaintenanceId || maintenanceItems[0]?.id || ''
+  const shouldDefaultToExistingMaintenance =
+    managedMaintenanceItems.length > 0
+    && !selectedMaintenanceId
+    && reminderTitle.trim() === ''
+  const effectiveMaintenanceMode =
+    managedMaintenanceItems.length === 0
+      ? 'new'
+      : shouldDefaultToExistingMaintenance && maintenanceMode === 'new'
+        ? 'existing'
+        : maintenanceMode
+  const effectiveSelectedMaintenanceId =
+    selectedMaintenanceId
+    || (effectiveMaintenanceMode === 'existing' ? managedMaintenanceItems[0]?.id || '' : '')
   const selectedMaintenanceItem = maintenanceItemById.get(effectiveSelectedMaintenanceId) ?? null
   const amountValue = parseAmount(amount)
   const recurringEndCount = Math.max(1, Number.parseInt(recurringEndCountInput || '1', 10) || 1)
@@ -2262,6 +2307,87 @@ export function TransactionForm({
           && transferResolvedAmounts !== null
         : Boolean(resolvedAccountId)
   const showKeypad = isKeypadVisible && kind !== 'reminder'
+
+  const fetchDeferredReferenceData = useCallback(async (
+    sections: Array<'merchants' | 'maintenance' | 'rates'>,
+  ): Promise<DeferredTransactionFormData | null> => {
+    if (sections.length === 0) return null
+
+    const response = await fetch(`/api/transaction-form-data?sections=${sections.join(',')}`, {
+      credentials: 'same-origin',
+    })
+
+    if (!response.ok) {
+      throw new Error(`transaction-form-data ${response.status}`)
+    }
+
+    return response.json() as Promise<DeferredTransactionFormData>
+  }, [])
+
+  const ensureMerchantDataLoaded = useCallback(async () => {
+    if (merchantDataLoaded || merchantRequestRef.current) {
+      return merchantRequestRef.current ?? Promise.resolve()
+    }
+
+    const request = (async () => {
+      setMerchantDataLoading(true)
+      try {
+        const data = await fetchDeferredReferenceData(['merchants'])
+        setManagedMerchants(data?.merchants ?? [])
+        setManagedMerchantGroups(data?.merchantGroups ?? [])
+        setMerchantDataLoaded(true)
+      } finally {
+        setMerchantDataLoading(false)
+        merchantRequestRef.current = null
+      }
+    })()
+
+    merchantRequestRef.current = request
+    return request
+  }, [fetchDeferredReferenceData, merchantDataLoaded])
+
+  const ensureMaintenanceDataLoaded = useCallback(async () => {
+    if (maintenanceDataLoaded || maintenanceRequestRef.current) {
+      return maintenanceRequestRef.current ?? Promise.resolve()
+    }
+
+    const request = (async () => {
+      setMaintenanceDataLoading(true)
+      try {
+        const data = await fetchDeferredReferenceData(['maintenance'])
+        const nextItems = data?.maintenanceItems ?? []
+        setManagedMaintenanceItems(nextItems)
+        setMaintenanceDataLoaded(true)
+      } finally {
+        setMaintenanceDataLoading(false)
+        maintenanceRequestRef.current = null
+      }
+    })()
+
+    maintenanceRequestRef.current = request
+    return request
+  }, [fetchDeferredReferenceData, maintenanceDataLoaded])
+
+  const ensureRateTableLoaded = useCallback(async () => {
+    if (rateTableLoaded || rateTableRequestRef.current) {
+      return rateTableRequestRef.current ?? Promise.resolve()
+    }
+
+    const request = (async () => {
+      setRateTableLoading(true)
+      try {
+        const data = await fetchDeferredReferenceData(['rates'])
+        setManagedRateTable(data?.rateTable ?? null)
+        setRateTableLoaded(true)
+      } finally {
+        setRateTableLoading(false)
+        rateTableRequestRef.current = null
+      }
+    })()
+
+    rateTableRequestRef.current = request
+    return request
+  }, [fetchDeferredReferenceData, rateTableLoaded])
 
   useEffect(() => {
     const container = kindCarouselRef.current
@@ -2297,6 +2423,22 @@ export function TransactionForm({
     prevAmountRef.current = amount
     prevReminderTitleRef.current = reminderTitle
   }, [amount, reminderTitle])
+
+  useEffect(() => {
+    if (!deferReferenceData) return
+    if (kind !== 'reminder') return
+    void ensureMaintenanceDataLoaded().catch((error) => {
+      console.error('[TransactionForm] load maintenance items failed:', error)
+    })
+  }, [deferReferenceData, ensureMaintenanceDataLoaded, kind])
+
+  useEffect(() => {
+    if (!deferReferenceData) return
+    if (kind !== 'transfer' || !transferIsCrossCurrency) return
+    void ensureRateTableLoaded().catch((error) => {
+      console.error('[TransactionForm] load rate table failed:', error)
+    })
+  }, [deferReferenceData, ensureRateTableLoaded, kind, transferIsCrossCurrency])
 
   useEffect(() => {
     if (!isCategoryPickerOpen && !isMerchantPickerOpen && !isMerchantManagerOpen) return
@@ -2667,6 +2809,11 @@ export function TransactionForm({
     setIsCategoryPickerOpen(false)
     setIsMerchantManagerOpen(false)
     setIsMerchantPickerOpen(true)
+    if (deferReferenceData) {
+      void ensureMerchantDataLoaded().catch((error) => {
+        console.error('[TransactionForm] load merchant picker failed:', error)
+      })
+    }
   }
 
   function openMerchantManager() {
@@ -2674,6 +2821,11 @@ export function TransactionForm({
     setIsCategoryPickerOpen(false)
     setIsMerchantManagerOpen(true)
     setIsMerchantPickerOpen(false)
+    if (deferReferenceData) {
+      void ensureMerchantDataLoaded().catch((error) => {
+        console.error('[TransactionForm] load merchant manager failed:', error)
+      })
+    }
   }
 
   function handleMerchantGroupUpsert(group: FamilyMerchantGroup) {
@@ -2807,13 +2959,17 @@ export function TransactionForm({
       } else {
         const newAmount = updateValue(amount)
         setAmount(newAmount)
-        if (!transferTargetManualRef.current && rateTable) {
-          const srcRate = rateTable.latest.rates[transferSourceCurrency]
-          const dstRate = rateTable.latest.rates[transferDestinationCurrency]
+        if (!transferTargetManualRef.current && managedRateTable) {
+          const srcRate = managedRateTable.latest.rates[transferSourceCurrency]
+          const dstRate = managedRateTable.latest.rates[transferDestinationCurrency]
           if (srcRate && dstRate) {
             const srcAmt = parseAmount(newAmount)
             setTransferTargetAmount(srcAmt ? String(Math.round(srcAmt * (srcRate / dstRate) * 100) / 100) : '')
           }
+        } else if (!transferTargetManualRef.current && deferReferenceData && transferIsCrossCurrency) {
+          void ensureRateTableLoaded().catch((error) => {
+            console.error('[TransactionForm] load transfer rate table failed:', error)
+          })
         }
       }
       return
@@ -3043,7 +3199,7 @@ export function TransactionForm({
           </section>
 
           <section className="overflow-hidden bg-white">
-            {maintenanceItems.length > 0 ? (
+            {managedMaintenanceItems.length > 0 ? (
               <>
                 <div className="flex min-h-[2.8rem] items-center justify-between gap-4 px-5">
                   <FieldLabel tone="bg-[#4f8d7c]" label="模式" />
@@ -3076,7 +3232,17 @@ export function TransactionForm({
               </>
             ) : null}
 
-            {effectiveMaintenanceMode === 'existing' && maintenanceItems.length > 0 ? (
+            {maintenanceDataLoading ? (
+              <>
+                <div className="flex min-h-[2.8rem] items-center justify-between gap-4 px-5">
+                  <FieldLabel tone="bg-[#4f8d7c]" label="保養項目" />
+                  <span className="text-sm font-bold text-slate-400">載入中...</span>
+                </div>
+                <div className="mx-5 h-px bg-[#edf2ed]" />
+              </>
+            ) : null}
+
+            {effectiveMaintenanceMode === 'existing' && managedMaintenanceItems.length > 0 ? (
               <>
                 <SelectFieldRow
                   tone="bg-[#4f8d7c]"
@@ -3242,6 +3408,9 @@ export function TransactionForm({
               </div>
             )}
             <div className={`mt-3 h-1 rounded-full ${amountLineClass(pageKind)}`} />
+            {transferIsCrossCurrency && rateTableLoading ? (
+              <p className="mt-2 text-xs font-bold text-slate-400">載入匯率中...</p>
+            ) : null}
           </section>
 
           <section className="overflow-hidden bg-white">
@@ -3601,6 +3770,7 @@ export function TransactionForm({
           open={isMerchantPickerOpen}
           merchants={managedMerchants}
           merchantGroups={managedMerchantGroups}
+          loading={merchantDataLoading}
           value={merchant}
           onChange={setMerchant}
           onOpenSettings={openMerchantManager}
@@ -3613,6 +3783,7 @@ export function TransactionForm({
           open={isMerchantManagerOpen}
           groups={managedMerchantGroups}
           merchants={managedMerchants}
+          loading={merchantDataLoading}
           onGroupUpsert={handleMerchantGroupUpsert}
           onGroupArchive={handleMerchantGroupArchive}
           onMerchantUpsert={handleMerchantUpsert}

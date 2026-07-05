@@ -1,5 +1,7 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { unstable_cache } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
+import { DATA_CACHE_REVALIDATE_SECONDS, DATA_CACHE_TAGS } from '@/lib/data-cache'
 
 export type ReminderFrequency = 'once' | 'weekly' | 'monthly' | 'quarterly' | 'semiannual' | 'yearly'
 
@@ -116,6 +118,40 @@ type ReminderRow = {
   is_paused?: boolean | null
 }
 
+async function getReminderRowsForCachedRead(): Promise<ReminderRow[]> {
+  const supabase = createAdminClient()
+  if (!supabase) return []
+
+  const supportsPaused = await supportsReminderPausedColumn()
+  const selectColumns = [
+    'id',
+    'name',
+    'detail',
+    'category',
+    'due_on',
+    'frequency',
+    'account_id',
+    'completed_at',
+    supportsPaused ? 'is_paused' : null,
+  ]
+    .filter(Boolean)
+    .join(', ')
+
+  const { data, error } = await supabase
+    .from('maintenance_reminders')
+    .select(selectColumns)
+    .is('completed_at', null)
+    .order('due_on', { ascending: true, nullsFirst: false })
+    .order('created_at', { ascending: true })
+
+  if (error) {
+    console.error('getReminderRowsForCachedRead error:', error.message)
+    return []
+  }
+
+  return (data ?? []) as unknown as ReminderRow[]
+}
+
 async function getReminderRows(): Promise<ReminderRow[]> {
   const authClient = await createClient()
   const { data: { user } } = await authClient.auth.getUser()
@@ -174,20 +210,39 @@ export async function getReminders(): Promise<ReminderItem[]> {
 }
 
 export async function getMaintenanceItemsForForm(): Promise<MaintenanceFormItem[]> {
-  const reminders = await getReminders()
+  const authClient = await createClient()
+  const { data: { user } } = await authClient.auth.getUser()
+  if (!user) return []
 
-  return reminders
-    .filter((item) => !item.isPaused)
-    .map((item) => ({
-      id: item.id,
-      name: item.name,
-      category: item.category,
-      frequency: item.frequency,
-      accountId: item.accountId,
-      accountName: item.accountName,
-      dueOn: item.dueOn,
-    }))
+  return getMaintenanceItemsForFormCached(user.id)
 }
+
+const getMaintenanceItemsForFormCached = unstable_cache(
+  async (userId: string): Promise<MaintenanceFormItem[]> => {
+    if (!userId) return []
+
+    const rows = await getReminderRowsForCachedRead()
+    const accountIds = rows.flatMap((row) => (row.account_id ? [row.account_id] : []))
+    const accountNames = await getAccountNameMap(accountIds)
+
+    return rows
+      .filter((row) => !Boolean(row.is_paused))
+      .map((row) => ({
+        id: row.id,
+        name: row.name,
+        category: row.category ?? null,
+        frequency: isReminderFrequency(row.frequency) ? row.frequency : 'quarterly',
+        accountId: row.account_id ?? null,
+        accountName: row.account_id ? accountNames.get(row.account_id) ?? null : null,
+        dueOn: row.due_on ?? null,
+      }))
+  },
+  ['maintenance-form-items'],
+  {
+    revalidate: DATA_CACHE_REVALIDATE_SECONDS,
+    tags: [DATA_CACHE_TAGS.accounts, DATA_CACHE_TAGS.reminders],
+  },
+)
 
 type MaintenanceRecordRow = {
   id: string

@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import { createAdminClient } from '@/lib/supabase/admin'
+import { getActiveAccountsForForm } from '@/lib/accounts-db'
 import {
   getAllMerchants,
   getTransactionById,
@@ -7,21 +7,6 @@ import {
 } from '@/lib/family-transactions'
 import { getRecurringTransactionById } from '@/lib/recurring-db'
 import { TransactionDetail } from '@/app/ledger/_components/TransactionDetail'
-import type { FamilyAccount } from '@/lib/finance/types'
-
-async function getActiveAccounts(): Promise<
-  Pick<FamilyAccount, 'id' | 'name' | 'currency' | 'owner' | 'shared' | 'favorite'>[]
-> {
-  const supabase = createAdminClient()
-  if (!supabase) return []
-  const { data } = await supabase
-    .from('family_accounts')
-    .select('id, name, currency, owner, shared, favorite')
-    .eq('is_archived', false)
-    .order('sort_order')
-
-  return (data ?? []) as Pick<FamilyAccount, 'id' | 'name' | 'currency' | 'owner' | 'shared' | 'favorite'>[]
-}
 
 function ledgerHrefForDate(date: string) {
   const match = date.match(/^(\d{4})-(\d{2})/)
@@ -40,7 +25,7 @@ export default async function TransactionDetailPage({ params, searchParams }: Pa
   if (!transaction) notFound()
 
   const [accounts, merchants, recurringSupported] = await Promise.all([
-    getActiveAccounts(),
+    getActiveAccountsForForm({ includeHidden: true }),
     getAllMerchants(),
     supportsTransactionRecurringColumn(),
   ])

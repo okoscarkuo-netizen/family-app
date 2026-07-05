@@ -1,4 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { unstable_cache } from 'next/cache'
+import { DATA_CACHE_REVALIDATE_SECONDS, DATA_CACHE_TAGS } from '@/lib/data-cache'
 
 let transactionRecurringColumnSupported: boolean | null = null
 
@@ -237,7 +239,7 @@ export function getTransferAmountForAccount(
   return null
 }
 
-export async function getCategories(kind?: TransactionKind): Promise<FamilyCategory[]> {
+async function getCategoriesUncached(kind?: TransactionKind): Promise<FamilyCategory[]> {
   const supabase = createAdminClient()
   if (!supabase) return []
 
@@ -252,6 +254,19 @@ export async function getCategories(kind?: TransactionKind): Promise<FamilyCateg
   const { data, error } = await query
   if (error) throw new Error(error.message)
   return (data ?? []) as FamilyCategory[]
+}
+
+const getCategoriesCached = unstable_cache(
+  async (kind?: TransactionKind) => getCategoriesUncached(kind),
+  ['family-categories'],
+  {
+    revalidate: DATA_CACHE_REVALIDATE_SECONDS,
+    tags: [DATA_CACHE_TAGS.categories],
+  },
+)
+
+export async function getCategories(kind?: TransactionKind): Promise<FamilyCategory[]> {
+  return getCategoriesCached(kind)
 }
 
 export async function getAllCategories(): Promise<FamilyCategory[]> {
@@ -277,7 +292,7 @@ export async function getRecentMerchants(limit = 16): Promise<FamilyMerchant[]> 
   return (data ?? []) as FamilyMerchant[]
 }
 
-export async function getAllMerchants(): Promise<FamilyMerchant[]> {
+async function getAllMerchantsUncached(): Promise<FamilyMerchant[]> {
   const supabase = createAdminClient()
   if (!supabase) return []
 
@@ -295,7 +310,20 @@ export async function getAllMerchants(): Promise<FamilyMerchant[]> {
   return (data ?? []) as FamilyMerchant[]
 }
 
-export async function getMerchantGroups(): Promise<FamilyMerchantGroup[]> {
+const getAllMerchantsCached = unstable_cache(
+  async () => getAllMerchantsUncached(),
+  ['family-merchants'],
+  {
+    revalidate: DATA_CACHE_REVALIDATE_SECONDS,
+    tags: [DATA_CACHE_TAGS.merchants],
+  },
+)
+
+export async function getAllMerchants(): Promise<FamilyMerchant[]> {
+  return getAllMerchantsCached()
+}
+
+async function getMerchantGroupsUncached(): Promise<FamilyMerchantGroup[]> {
   const supabase = createAdminClient()
   if (!supabase) return []
 
@@ -312,6 +340,19 @@ export async function getMerchantGroups(): Promise<FamilyMerchantGroup[]> {
   }
 
   return (data ?? []) as FamilyMerchantGroup[]
+}
+
+const getMerchantGroupsCached = unstable_cache(
+  async () => getMerchantGroupsUncached(),
+  ['family-merchant-groups'],
+  {
+    revalidate: DATA_CACHE_REVALIDATE_SECONDS,
+    tags: [DATA_CACHE_TAGS.merchantGroups],
+  },
+)
+
+export async function getMerchantGroups(): Promise<FamilyMerchantGroup[]> {
+  return getMerchantGroupsCached()
 }
 
 export function buildMerchantPickerGroups(
@@ -363,7 +404,7 @@ export function buildMerchantPickerGroups(
   ]
 }
 
-export async function getLatestTransactionPreset(): Promise<TransactionFormPreset | null> {
+async function getLatestTransactionPresetUncached(): Promise<TransactionFormPreset | null> {
   const supabase = createAdminClient()
   if (!supabase) return null
 
@@ -388,9 +429,22 @@ export async function getLatestTransactionPreset(): Promise<TransactionFormPrese
   }
 }
 
+const getLatestTransactionPresetCached = unstable_cache(
+  async () => getLatestTransactionPresetUncached(),
+  ['latest-transaction-preset'],
+  {
+    revalidate: DATA_CACHE_REVALIDATE_SECONDS,
+    tags: [DATA_CACHE_TAGS.transactions],
+  },
+)
+
+export async function getLatestTransactionPreset(): Promise<TransactionFormPreset | null> {
+  return getLatestTransactionPresetCached()
+}
+
 export type RecentAccountIdsByKind = Record<TransactionKind, string[]>
 
-export async function getRecentAccountIdsByKind(options?: {
+async function getRecentAccountIdsByKindUncached(options?: {
   days?: number
   limit?: number
 }): Promise<RecentAccountIdsByKind> {
@@ -440,6 +494,24 @@ export async function getRecentAccountIdsByKind(options?: {
     income: pickTop(tally.income),
     transfer: pickTop(tally.transfer),
   }
+}
+
+const getRecentAccountIdsByKindCached = unstable_cache(
+  async (days: number, limit: number) => getRecentAccountIdsByKindUncached({ days, limit }),
+  ['recent-account-ids-by-kind'],
+  {
+    revalidate: DATA_CACHE_REVALIDATE_SECONDS,
+    tags: [DATA_CACHE_TAGS.transactions],
+  },
+)
+
+export async function getRecentAccountIdsByKind(options?: {
+  days?: number
+  limit?: number
+}): Promise<RecentAccountIdsByKind> {
+  const days = options?.days ?? 30
+  const limit = options?.limit ?? 10
+  return getRecentAccountIdsByKindCached(days, limit)
 }
 
 async function attachCategoryPaths(transactions: FamilyTransaction[]): Promise<FamilyTransaction[]> {
@@ -529,7 +601,7 @@ export async function getTransactions(params: GetTransactionsParams = {}): Promi
   return transactions
 }
 
-export async function getNetWorthTrendTransactions(): Promise<NetWorthTrendTransaction[]> {
+async function getNetWorthTrendTransactionsUncached(): Promise<NetWorthTrendTransaction[]> {
   const supabase = createAdminClient()
   if (!supabase) return []
 
@@ -579,4 +651,17 @@ export async function getNetWorthTrendTransactions(): Promise<NetWorthTrendTrans
       }))
     }),
   ]
+}
+
+const getNetWorthTrendTransactionsCached = unstable_cache(
+  async () => getNetWorthTrendTransactionsUncached(),
+  ['net-worth-trend-transactions'],
+  {
+    revalidate: DATA_CACHE_REVALIDATE_SECONDS,
+    tags: [DATA_CACHE_TAGS.transactions],
+  },
+)
+
+export async function getNetWorthTrendTransactions(): Promise<NetWorthTrendTransaction[]> {
+  return getNetWorthTrendTransactionsCached()
 }

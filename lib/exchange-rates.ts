@@ -1,4 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { unstable_cache } from 'next/cache'
+import { DATA_CACHE_TAGS, RATE_CACHE_REVALIDATE_SECONDS } from '@/lib/data-cache'
 
 const CBC_DAILY_RATES_URL =
   'https://www.cbc.gov.tw/public/data/OpenData/%E7%B6%93%E7%A0%94%E8%99%95/BP01D01.csv'
@@ -310,7 +312,7 @@ function isStale(table: TwdRateTable): boolean {
   return diffMs > MAX_STALENESS_DAYS * 24 * 60 * 60 * 1000
 }
 
-export async function getTwdRateTable(): Promise<TwdRateTable> {
+async function getTwdRateTableUncached(): Promise<TwdRateTable> {
   const stored = await getStoredRateTable()
   if (stored && !isStale(stored)) return stored
 
@@ -321,6 +323,19 @@ export async function getTwdRateTable(): Promise<TwdRateTable> {
   })
 
   return table
+}
+
+const getTwdRateTableCached = unstable_cache(
+  async () => getTwdRateTableUncached(),
+  ['twd-rate-table'],
+  {
+    revalidate: RATE_CACHE_REVALIDATE_SECONDS,
+    tags: [DATA_CACHE_TAGS.rates],
+  },
+)
+
+export async function getTwdRateTable(): Promise<TwdRateTable> {
+  return getTwdRateTableCached()
 }
 
 export function getRateSnapshotForDate(table: TwdRateTable, dateKey: string): TwdRateSnapshot {

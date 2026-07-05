@@ -21,6 +21,15 @@
 
 | 日期 時間 | 工具 | 分支 | 做什麼 | 狀態 |
 |---|---|---|---|---|
+| 2026-07-05 10:15 | Codex | feat/app-smoothness | 第二波啟動優化：把 `/ledger/new` 的商家／保養／匯率改成延後載入 | 完成 |
+| 2026-07-05 09:52 | Codex | feat/app-smoothness | 更多裡的保養頁面新增每個保養事件的編輯功能 | 完成 |
+| 2026-07-05 09:50 | Codex | feat/app-smoothness | 改善 app 開啟慢：優化 `/ledger/new` 初始載入與表單重算 | 完成 |
+| 2026-06-27 23:10 | Codex | feat/app-smoothness | 將「提辦」改成保養記錄流程：記一筆新增完成紀錄、流水顯示保養歷史、提醒頁改保養總覽 | 完成 |
+| 2026-06-21 22:25 | Codex | feat/app-smoothness | 套用 Chase Checking 全歷史重複交易清理（刪除 10、日期修正 6、餘額不變） | 完成 |
+| 2026-06-21 22:15 | Codex | feat/app-smoothness | 全面檢查 Chase Checking 歷史重複交易（確認刪除候選 10、日期修正 6） | 完成 |
+| 2026-06-21 13:23 | Codex | feat/app-smoothness | 套用 Chase Checking 2026-05 對帳結果（新增 7、修改 7、刪除 4，回查通過） | 完成 |
+| 2026-06-21 13:17 | Codex | feat/app-smoothness | 檢查並修正待辦／提醒功能 | 完成 |
+| 2026-06-21 13:04 | Codex | feat/app-smoothness | 整理並核對 2026-06 的 BOA、Amex、HSBC 三份帳單（新增 27、修改 5，回查通過） | 完成 |
 | 2026-06-09 | Claude | feat/app-smoothness | PWA start_url 改成 /ledger/new（開 App 直接進記一筆） | 完成 |
 | 2026-06-05 09:00 | Claude | feat/app-smoothness | 實作自動備份功能（/more/backup + Gmail SMTP + Vercel Cron）。程式碼完成 11 commits，待使用者：套用 migration、設 Gmail App Password、設 Vercel env、push 部署 | 暫停 |
 | 2026-06-02 01:00 | Codex | feat/app-smoothness | 套用 recurring migration 到 Supabase production | 完成 |

@@ -1,7 +1,8 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, revalidateTag } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { DATA_CACHE_TAGS } from '@/lib/data-cache'
 import type { FamilyMerchant, FamilyMerchantGroup } from '@/lib/family-transactions'
 
 type MerchantGroupMutationResult =
@@ -37,6 +38,8 @@ function normalizeMerchantGroupError(message: string) {
 }
 
 function revalidateMerchantConsumers() {
+  revalidateTag(DATA_CACHE_TAGS.merchants, 'max')
+  revalidateTag(DATA_CACHE_TAGS.merchantGroups, 'max')
   revalidatePath('/ledger')
   revalidatePath('/ledger/new')
 }

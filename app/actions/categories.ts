@@ -1,7 +1,8 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, revalidateTag } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { DATA_CACHE_TAGS } from '@/lib/data-cache'
 import type { FamilyCategory, TransactionKind } from '@/lib/family-transactions'
 import { getDefaultCategoryIcon, normalizeCategoryIcon } from '@/lib/category-icons'
 
@@ -34,6 +35,7 @@ function normalizeCategoryError(message: string) {
 }
 
 function revalidateCategoryConsumers() {
+  revalidateTag(DATA_CACHE_TAGS.categories, 'max')
   revalidatePath('/ledger')
   revalidatePath('/ledger/new')
   revalidatePath('/accounts')

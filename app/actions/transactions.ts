@@ -1,11 +1,12 @@
 'use server'
 
 import { createAdminClient } from '@/lib/supabase/admin'
+import { DATA_CACHE_TAGS } from '@/lib/data-cache'
 import { normalizeOwner } from '@/lib/finance/types'
 import { convertBetweenCurrencies, getRateSnapshotForDate, getTwdRateTable } from '@/lib/exchange-rates'
 import { computeNextDueDate, type Frequency } from '@/lib/recurring-db'
 import { supportsTransactionRecurringColumn } from '@/lib/family-transactions'
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, revalidateTag } from 'next/cache'
 
 type AdminClient = NonNullable<ReturnType<typeof createAdminClient>>
 type EditableTransactionKind = 'income' | 'expense' | 'transfer'
@@ -247,6 +248,9 @@ function uniqueAccountIds(...ids: Array<string | null | undefined>) {
 }
 
 function revalidateTransactionSurfaces(accountIds: string[], transactionId?: string) {
+  revalidateTag(DATA_CACHE_TAGS.transactions, 'max')
+  revalidateTag(DATA_CACHE_TAGS.merchants, 'max')
+  revalidateTag(DATA_CACHE_TAGS.accounts, 'max')
   revalidatePath('/')
   revalidatePath('/ledger')
   revalidatePath('/ledger/new')

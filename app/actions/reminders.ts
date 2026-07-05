@@ -1,8 +1,9 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, revalidateTag } from 'next/cache'
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { DATA_CACHE_TAGS } from '@/lib/data-cache'
 import { ensureDefaultHouseholdId } from '@/lib/household'
 
 type AdminClient = NonNullable<ReturnType<typeof createAdminClient>>
@@ -441,6 +442,7 @@ async function resolveReminderForRecord(
 }
 
 function revalidateMaintenanceViews() {
+  revalidateTag(DATA_CACHE_TAGS.reminders, 'max')
   revalidatePath('/')
   revalidatePath('/ledger')
   revalidatePath('/ledger/new')

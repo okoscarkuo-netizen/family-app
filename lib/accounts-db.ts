@@ -1,4 +1,5 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { unstable_cache } from 'next/cache'
 import { accountFromRow, accountToRow, initialAccounts } from '@/lib/accounts'
 import type { AccountRow } from '@/lib/accounts'
 import type { FamilyAccount } from '@/lib/finance/types'
@@ -8,12 +9,18 @@ import {
   resolveCurrentHouseholdId,
   setAccountOpeningBalancesForHousehold,
 } from '@/lib/account-opening-balance-store'
+import { DATA_CACHE_REVALIDATE_SECONDS, DATA_CACHE_TAGS } from '@/lib/data-cache'
 
 let openingBalanceColumnSupported: boolean | null = null
 let remarkColumnSupported: boolean | null = null
 let favoriteColumnSupported: boolean | null = null
 let balanceDateColumnSupported: boolean | null = null
 const LEDGER_DELTA_PAGE_SIZE = 1000
+
+type FormAccountOption = Pick<
+  FamilyAccount,
+  'id' | 'name' | 'currency' | 'kind' | 'balance' | 'owner' | 'shared' | 'type' | 'favorite'
+>
 
 async function probeColumn(column: string): Promise<boolean> {
   const supabase = createAdminClient()
@@ -212,4 +219,66 @@ export async function getAllAccountLedgerDeltas(): Promise<Record<string, number
   }
 
   return result
+}
+
+const getActiveAccountsForFormCached = unstable_cache(
+  async (): Promise<FamilyAccount[]> => {
+    const supabase = createAdminClient()
+    if (!supabase) return []
+
+    const supportsFavorite = await supportsFavoriteColumn()
+    const selectColumns = [
+      'id',
+      'name',
+      'currency',
+      'kind',
+      'balance',
+      'owner',
+      'shared',
+      'type',
+      supportsFavorite ? 'favorite' : null,
+      'hidden',
+    ]
+      .filter(Boolean)
+      .join(', ')
+
+    const { data, error } = await supabase
+      .from('family_accounts')
+      .select(selectColumns)
+      .eq('is_archived', false)
+      .order('sort_order')
+
+    if (error) {
+      console.error('[accounts-db] getActiveAccountsForForm error:', error)
+      return []
+    }
+
+    return (data ?? []).map((row) => accountFromRow(row as unknown as AccountRow))
+  },
+  ['active-accounts-for-form'],
+  {
+    revalidate: DATA_CACHE_REVALIDATE_SECONDS,
+    tags: [DATA_CACHE_TAGS.accounts],
+  },
+)
+
+export async function getActiveAccountsForForm(options?: {
+  includeHidden?: boolean
+}): Promise<FormAccountOption[]> {
+  const includeHidden = options?.includeHidden ?? false
+  const accounts = await getActiveAccountsForFormCached()
+
+  return accounts
+    .filter((account) => includeHidden || !account.hidden)
+    .map((account) => ({
+      id: account.id,
+      name: account.name,
+      currency: account.currency,
+      kind: account.kind,
+      balance: account.balance,
+      owner: account.owner,
+      shared: account.shared,
+      type: account.type,
+      favorite: account.favorite,
+    }))
 }

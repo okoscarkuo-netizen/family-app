@@ -1,6 +1,6 @@
 'use server'
 
-import { revalidatePath } from 'next/cache'
+import { revalidatePath, revalidateTag } from 'next/cache'
 import { createAdminClient } from '@/lib/supabase/admin'
 import {
   supportsFavoriteColumn,
@@ -13,6 +13,7 @@ import {
   resolveCurrentHouseholdId,
   setAccountOpeningBalancesForHousehold,
 } from '@/lib/account-opening-balance-store'
+import { DATA_CACHE_TAGS } from '@/lib/data-cache'
 import { getAccountGroup, normalizeAccountType, normalizeOwner } from '@/lib/finance/types'
 
 const VALID_CURRENCIES = new Set(['TWD', 'USD', 'JPY'])
@@ -93,6 +94,7 @@ async function saveOpeningBalanceFallback(accountId: string, openingBalance: num
 }
 
 function revalidateAccountBalanceSurfaces(id: string) {
+  revalidateTag(DATA_CACHE_TAGS.accounts, 'max')
   revalidatePath('/')
   revalidatePath('/accounts')
   revalidatePath('/ledger')
@@ -172,6 +174,7 @@ export async function createAccount(formData: FormData) {
     }
   }
 
+  revalidateTag(DATA_CACHE_TAGS.accounts, 'max')
   revalidatePath('/accounts')
 }
 
@@ -266,6 +269,7 @@ export async function archiveAccount(id: string) {
     .eq('id', id)
 
   if (error) throw new Error(error.message)
+  revalidateTag(DATA_CACHE_TAGS.accounts, 'max')
   revalidatePath('/accounts')
 }
 
@@ -336,6 +340,7 @@ export async function pinCashAccount(id: string) {
     .eq('id', id)
 
   if (error) throw new Error(error.message)
+  revalidateTag(DATA_CACHE_TAGS.accounts, 'max')
   revalidatePath('/accounts')
   revalidatePath(`/accounts/${encodeURIComponent(id)}`)
 }
@@ -372,6 +377,7 @@ export async function reorderAccounts(orderedAccountIds: string[]) {
     if (updateError) throw new Error(updateError.message)
   }
 
+  revalidateTag(DATA_CACHE_TAGS.accounts, 'max')
   revalidatePath('/')
   revalidatePath('/accounts')
 }

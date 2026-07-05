@@ -1,40 +1,13 @@
-import { createAdminClient } from '@/lib/supabase/admin'
+import { getActiveAccountsForForm } from '@/lib/accounts-db'
 import {
   getAllCategories,
-  getAllMerchants,
   getLatestTransactionPreset,
-  getMerchantGroups,
   getRecentAccountIdsByKind,
   getTransactionById,
 } from '@/lib/family-transactions'
 import { getRecurringTransactionById } from '@/lib/recurring-db'
-import { getTwdRateTable } from '@/lib/exchange-rates'
-import { getMaintenanceItemsForForm } from '@/lib/reminders-db'
 import { TransactionForm } from '@/app/ledger/_components/TransactionForm'
 import { BottomNav } from '@/components/BottomNav'
-import type { FamilyAccount } from '@/lib/finance/types'
-
-async function getActiveAccounts(includeHidden = false): Promise<
-  Pick<FamilyAccount, 'id' | 'name' | 'currency' | 'kind' | 'balance' | 'owner' | 'shared' | 'type' | 'favorite'>[]
-> {
-  const supabase = createAdminClient()
-  if (!supabase) return []
-  let query = supabase
-    .from('family_accounts')
-    .select('id, name, currency, kind, balance, owner, shared, type, favorite')
-    .eq('is_archived', false)
-
-  if (!includeHidden) {
-    query = query.eq('hidden', false)
-  }
-
-  const { data } = await query
-    .order('sort_order')
-  return (data ?? []) as Pick<
-    FamilyAccount,
-    'id' | 'name' | 'currency' | 'kind' | 'balance' | 'owner' | 'shared' | 'type' | 'favorite'
-  >[]
-}
 
 export default async function NewTransactionPage({
   searchParams,
@@ -50,14 +23,10 @@ export default async function NewTransactionPage({
     : null
   const initialKind = params.kind === 'reminder' ? 'reminder' : undefined
 
-  const [accounts, maintenanceItems, categories, merchants, merchantGroups, latestPreset, rateTable, recentAccountIdsByKind] = await Promise.all([
-    getActiveAccounts(Boolean(copyTransaction)),
-    getMaintenanceItemsForForm(),
+  const [accounts, categories, latestPreset, recentAccountIdsByKind] = await Promise.all([
+    getActiveAccountsForForm({ includeHidden: Boolean(copyTransaction) }),
     getAllCategories(),
-    getAllMerchants(),
-    getMerchantGroups(),
     getLatestTransactionPreset(),
-    getTwdRateTable(),
     getRecentAccountIdsByKind(),
   ])
 
@@ -67,16 +36,17 @@ export default async function NewTransactionPage({
         <section className="mx-auto min-h-screen w-full max-w-md">
           <TransactionForm
             accounts={accounts}
-            maintenanceItems={maintenanceItems}
+            maintenanceItems={[]}
             categories={categories}
-            merchants={merchants}
-            merchantGroups={merchantGroups}
+            merchants={[]}
+            merchantGroups={[]}
             initialPreset={latestPreset}
-            rateTable={rateTable}
+            rateTable={null}
             copyTransaction={copyTransaction}
             copyRecurringFrequency={copyRecurring?.frequency ?? null}
             initialKind={initialKind}
             recentAccountIdsByKind={recentAccountIdsByKind}
+            deferReferenceData
           />
         </section>
       </main>
