@@ -2137,7 +2137,7 @@ export function TransactionForm({
   const [recurringOn, setRecurringOn] = useState(isCopyMode && copyRecurringFrequency != null)
   const [recurringFrequency, setRecurringFrequency] = useState<'weekly' | 'monthly' | 'quarterly' | 'yearly'>(copyRecurringFrequency ?? 'monthly')
   const [recurringEndType, setRecurringEndType] = useState<'forever' | 'count'>('forever')
-  const [recurringEndCount, setRecurringEndCount] = useState<number>(12)
+  const [recurringEndCountInput, setRecurringEndCountInput] = useState('12')
   const [message, setMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
   const availableKinds = useMemo(
     () => (isEditMode ? KINDS.filter((item) => item !== 'reminder') : KINDS),
@@ -2232,6 +2232,7 @@ export function TransactionForm({
   const effectiveSelectedMaintenanceId = selectedMaintenanceId || maintenanceItems[0]?.id || ''
   const selectedMaintenanceItem = maintenanceItemById.get(effectiveSelectedMaintenanceId) ?? null
   const amountValue = parseAmount(amount)
+  const recurringEndCount = Math.max(1, Number.parseInt(recurringEndCountInput || '1', 10) || 1)
   const transferSourceCurrency = (selectedAccount?.currency || currency || 'TWD').toUpperCase()
   const transferDestinationCurrency = (selectedToAccount?.currency || transferSourceCurrency).toUpperCase()
   const transferIsCrossCurrency = transferSourceCurrency !== transferDestinationCurrency
@@ -2996,8 +2997,14 @@ export function TransactionForm({
                 <input
                   type="number"
                   min="1"
-                  value={recurringEndCount}
-                  onChange={(e) => setRecurringEndCount(Math.max(1, Number(e.target.value)))}
+                  value={recurringEndCountInput}
+                  onChange={(e) => {
+                    const nextValue = e.target.value
+                    if (/^\d*$/.test(nextValue)) setRecurringEndCountInput(nextValue)
+                  }}
+                  onBlur={() => {
+                    if (!recurringEndCountInput) setRecurringEndCountInput('1')
+                  }}
                   onFocus={() => setRecurringEndType('count')}
                   className="w-14 rounded-md border border-slate-200 bg-white px-2 py-1 text-center text-[0.95rem] font-black text-slate-900 outline-none"
                 />
