@@ -153,6 +153,7 @@ function getMetaLine(item: LedgerListItem, accountNames: Map<string, string>) {
       item.frequency === 'weekly' ? '每週' :
       item.frequency === 'monthly' ? '每月' :
       item.frequency === 'quarterly' ? '每三個月' :
+      item.frequency === 'semiannual' ? '每半年' :
       '每年'
     const parts = [time, '保養', frequencyLabel].filter(Boolean)
     return parts.join(' · ')
