@@ -24,6 +24,15 @@ export type ReminderMutationResult =
   | { ok: true }
   | { ok: false; error: string }
 
+type ParsedReminderDraftFields = {
+  name: string
+  category: string | null
+  frequency: ReminderFrequency
+  dueOn: string | null
+  detail: string | null
+  accountId: string | null
+}
+
 const VALID_FREQUENCIES = new Set<ReminderFrequency>([
   'once',
   'weekly',
@@ -147,6 +156,42 @@ function todayDateString() {
   const month = parts.find((part) => part.type === 'month')?.value ?? String(now.getUTCMonth() + 1).padStart(2, '0')
   const day = parts.find((part) => part.type === 'day')?.value ?? String(now.getUTCDate()).padStart(2, '0')
   return `${year}-${month}-${day}`
+}
+
+async function parseReminderDraftFields(
+  supabase: AdminClient,
+  formData: FormData,
+): Promise<{ ok: true; fields: ParsedReminderDraftFields } | { ok: false; error: string }> {
+  const name = str(formData.get('name'))
+  if (!name) return fail('項目名稱必填。')
+
+  const category = nullableStr(formData.get('category'))
+  if (category && !VALID_CATEGORIES.has(category)) return fail('類別設定不正確。')
+
+  const frequency = str(formData.get('frequency')) as ReminderFrequency
+  if (!VALID_FREQUENCIES.has(frequency)) return fail('週期設定不正確。')
+
+  const dueOn = nullableStr(formData.get('due_on'))
+  if (dueOn && !isValidDate(dueOn)) return fail('下次日期格式不正確。')
+
+  const detail = nullableStr(formData.get('detail'))
+  const accountId = nullableStr(formData.get('account_id'))
+  if (accountId) {
+    const account = await validateAccount(supabase, accountId)
+    if (!account) return fail('找不到該帳戶，請重新選擇。')
+  }
+
+  return {
+    ok: true,
+    fields: {
+      name,
+      category,
+      frequency,
+      dueOn,
+      detail,
+      accountId,
+    },
+  }
 }
 
 async function getCurrentUser() {
@@ -286,32 +331,16 @@ export async function createMaintenanceReminder(
   const user = await getCurrentUser()
   if (!user) return fail('請先登入再新增保養項目。')
 
-  const name = str(formData.get('name'))
-  if (!name) return fail('項目名稱必填。')
-
-  const category = nullableStr(formData.get('category'))
-  if (category && !VALID_CATEGORIES.has(category)) return fail('類別設定不正確。')
-
-  const frequency = str(formData.get('frequency')) as ReminderFrequency
-  if (!VALID_FREQUENCIES.has(frequency)) return fail('週期設定不正確。')
-
-  const dueOn = nullableStr(formData.get('due_on'))
-  if (dueOn && !isValidDate(dueOn)) return fail('下次日期格式不正確。')
-
-  const detail = nullableStr(formData.get('detail'))
-  const accountId = nullableStr(formData.get('account_id'))
-  if (accountId) {
-    const account = await validateAccount(supabase, accountId)
-    if (!account) return fail('找不到該帳戶，請重新選擇。')
-  }
+  const parsed = await parseReminderDraftFields(supabase, formData)
+  if (!parsed.ok) return parsed
 
   const result = await createMaintenanceItem(supabase, user, {
-    name,
-    category,
-    frequency,
-    dueOn,
-    detail,
-    accountId,
+    name: parsed.fields.name,
+    category: parsed.fields.category,
+    frequency: parsed.fields.frequency,
+    dueOn: parsed.fields.dueOn,
+    detail: parsed.fields.detail,
+    accountId: parsed.fields.accountId,
     completedAt: null,
   })
 
@@ -415,6 +444,7 @@ function revalidateMaintenanceViews() {
   revalidatePath('/')
   revalidatePath('/ledger')
   revalidatePath('/ledger/new')
+  revalidatePath('/more')
   revalidatePath('/reminders')
 }
 
@@ -507,6 +537,48 @@ export async function setReminderPaused(
     .eq('id', reminderId)
 
   if (error) return fail(error.message)
+
+  revalidateMaintenanceViews()
+  return { ok: true }
+}
+
+export async function updateReminder(
+  formData: FormData,
+): Promise<ReminderMutationResult> {
+  const supabase = createAdminClient()
+  if (!supabase) return fail('資料庫連線目前不可用，請稍後再試。')
+
+  const user = await getCurrentUser()
+  if (!user) return fail('請先登入。')
+
+  const reminderId = str(formData.get('reminder_id'))
+  if (!reminderId) return fail('找不到保養項目 ID。')
+
+  const parsed = await parseReminderDraftFields(supabase, formData)
+  if (!parsed.ok) return parsed
+
+  const { data, error } = await supabase
+    .from('maintenance_reminders')
+    .select('id, completed_at')
+    .eq('id', reminderId)
+    .maybeSingle()
+
+  if (error || !data) return fail('找不到該保養項目。')
+  if (data.completed_at) return fail('這個保養項目已經結束。')
+
+  const { error: updateError } = await supabase
+    .from('maintenance_reminders')
+    .update({
+      account_id: parsed.fields.accountId,
+      category: parsed.fields.category,
+      detail: parsed.fields.detail,
+      due_on: parsed.fields.dueOn,
+      frequency: parsed.fields.frequency,
+      name: parsed.fields.name,
+    })
+    .eq('id', reminderId)
+
+  if (updateError) return fail(updateError.message)
 
   revalidateMaintenanceViews()
   return { ok: true }

@@ -1,10 +1,19 @@
 import Link from 'next/link'
 import { BottomNav } from '@/components/BottomNav'
+import { getAccounts } from '@/lib/accounts-db'
 import { getReminders } from '@/lib/reminders-db'
 import { ReminderList } from '@/app/reminders/_components/ReminderList'
 
 export default async function RemindersPage() {
-  const reminders = await getReminders()
+  const [reminders, accounts] = await Promise.all([
+    getReminders(),
+    getAccounts(),
+  ])
+
+  const accountOptions = accounts.map((account) => ({
+    id: account.id,
+    name: account.name,
+  }))
 
   return (
     <>
@@ -22,7 +31,7 @@ export default async function RemindersPage() {
               + 記一筆
             </Link>
           </div>
-          <ReminderList reminders={reminders} />
+          <ReminderList reminders={reminders} accountOptions={accountOptions} />
         </div>
       </main>
       <BottomNav />
