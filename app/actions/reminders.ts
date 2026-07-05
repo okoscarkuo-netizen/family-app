@@ -213,6 +213,14 @@ async function createMaintenanceItem(
   const support = await ensureMutationSupport(supabase)
   if (!support.ok) return support
 
+  let householdId: string
+  try {
+    householdId = await ensureDefaultHouseholdId(supabase, user)
+  } catch (error) {
+    console.error('ensure default household for maintenance item failed:', error)
+    return fail('目前無法取得家庭資料，請稍後再試。')
+  }
+
   const insertPayload: Record<string, string | null | boolean> = {
     account_id: payload.accountId,
     name: payload.name,
@@ -228,29 +236,41 @@ async function createMaintenanceItem(
   }
 
   if (support.supportsHouseholdId) {
-    insertPayload.household_id = await ensureDefaultHouseholdId(supabase, user)
+    insertPayload.household_id = householdId
   }
 
   if (support.supportsCreatedBy) {
     insertPayload.created_by = user.id
   }
 
+  const selectColumns = [
+    'id',
+    support.supportsHouseholdId ? 'household_id' : null,
+    'frequency',
+  ]
+    .filter(Boolean)
+    .join(', ')
+
   const { data, error } = await supabase
     .from('maintenance_reminders')
     .insert(insertPayload)
-    .select('id, household_id, frequency')
+    .select(selectColumns)
     .single()
 
   if (error || !data) {
     return fail(error?.message ?? '保養項目建立失敗。')
   }
 
+  const inserted = data as unknown as Record<string, unknown>
+
   return {
     ok: true as const,
     reminder: {
-      id: data.id as string,
-      householdId: data.household_id as string,
-      frequency: data.frequency as ReminderFrequency,
+      id: inserted.id as string,
+      householdId: support.supportsHouseholdId
+        ? String(inserted.household_id ?? householdId)
+        : householdId,
+      frequency: inserted.frequency as ReminderFrequency,
     },
   }
 }
@@ -310,9 +330,17 @@ async function resolveReminderForRecord(
     const support = await ensureMutationSupport(supabase)
     if (!support.ok) return support
 
+    let fallbackHouseholdId: string
+    try {
+      fallbackHouseholdId = await ensureDefaultHouseholdId(supabase, user)
+    } catch (error) {
+      console.error('ensure default household for maintenance record failed:', error)
+      return fail('目前無法取得家庭資料，請稍後再試。')
+    }
+
     const selectColumns = [
       'id',
-      'household_id',
+      support.supportsHouseholdId ? 'household_id' : null,
       'frequency',
       'account_id',
       'completed_at',
@@ -332,11 +360,15 @@ async function resolveReminderForRecord(
     if (row.completed_at) return fail('這個保養項目已經結束。')
     if (support.supportsPaused && row.is_paused) return fail('這個保養項目目前已暫停。')
 
+    const householdId = support.supportsHouseholdId
+      ? String(row.household_id ?? fallbackHouseholdId)
+      : fallbackHouseholdId
+
     return {
       ok: true as const,
       reminder: {
         id: row.id as string,
-        householdId: row.household_id as string,
+        householdId,
         frequency: row.frequency as ReminderFrequency,
       },
       supportsPaused: support.supportsPaused,
