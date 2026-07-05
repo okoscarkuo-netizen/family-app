@@ -10,6 +10,7 @@ export type ReminderItem = {
   name: string
   detail: string | null
   category: string | null
+  lastCompletedOn: string | null
   dueOn: string | null
   frequency: ReminderFrequency
   accountId: string | null
@@ -106,6 +107,35 @@ async function getAccountNameMap(accountIds: string[]) {
   return new Map((data ?? []).map((row) => [row.id as string, row.name as string]))
 }
 
+async function getLatestCompletedOnMap(reminderIds: string[]) {
+  const supabase = createAdminClient()
+  if (!supabase || reminderIds.length === 0) return new Map<string, string>()
+  if (!(await supportsMaintenanceRecordsTable())) return new Map<string, string>()
+
+  const { data, error } = await supabase
+    .from('maintenance_records')
+    .select('reminder_id, completed_on, created_at')
+    .in('reminder_id', reminderIds)
+    .order('completed_on', { ascending: false })
+    .order('created_at', { ascending: false })
+
+  if (error) {
+    console.error('getLatestCompletedOnMap error:', error.message)
+    return new Map<string, string>()
+  }
+
+  const map = new Map<string, string>()
+
+  for (const row of data ?? []) {
+    const reminderId = row.reminder_id as string | null
+    const completedOn = row.completed_on as string | null
+    if (!reminderId || !completedOn || map.has(reminderId)) continue
+    map.set(reminderId, completedOn)
+  }
+
+  return map
+}
+
 type ReminderRow = {
   id: string
   name: string
@@ -192,14 +222,19 @@ async function getReminderRows(): Promise<ReminderRow[]> {
 
 export async function getReminders(): Promise<ReminderItem[]> {
   const rows = await getReminderRows()
+  const reminderIds = rows.map((row) => row.id)
   const accountIds = rows.flatMap((row) => (row.account_id ? [row.account_id] : []))
-  const accountNames = await getAccountNameMap(accountIds)
+  const [accountNames, latestCompletedOnMap] = await Promise.all([
+    getAccountNameMap(accountIds),
+    getLatestCompletedOnMap(reminderIds),
+  ])
 
   return rows.map((row) => ({
     id: row.id,
     name: row.name,
     detail: row.detail ?? null,
     category: row.category ?? null,
+    lastCompletedOn: latestCompletedOnMap.get(row.id) ?? null,
     dueOn: row.due_on ?? null,
     frequency: isReminderFrequency(row.frequency) ? row.frequency : 'quarterly',
     accountId: row.account_id ?? null,

@@ -42,17 +42,15 @@ type ReminderAccountOption = {
   name: string
 }
 
-function formatDueOn(dueOn: string | null) {
-  if (!dueOn) return '未排程'
-  const d = new Date(`${dueOn}T12:00:00`)
-  if (Number.isNaN(d.getTime())) return dueOn
-  const now = new Date()
-  const diffDays = Math.round((d.getTime() - now.getTime()) / 86400000)
-  const formatted = new Intl.DateTimeFormat('zh-TW', { month: 'numeric', day: 'numeric' }).format(d)
-  if (diffDays < 0) return `逾期 ${-diffDays} 天 · ${formatted}`
-  if (diffDays === 0) return `今天 · ${formatted}`
-  if (diffDays <= 7) return `${diffDays} 天後 · ${formatted}`
-  return formatted
+function formatMonthDayYear(value: string | null, fallback: string) {
+  if (!value) return fallback
+  const d = new Date(`${value}T12:00:00`)
+  if (Number.isNaN(d.getTime())) return value
+  return new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(d)
 }
 
 function dueUrgency(dueOn: string | null): 'overdue' | 'soon' | 'normal' {
@@ -368,11 +366,35 @@ export function ReminderList({
                               {item.accountName ? ` · ${item.accountName}` : ''}
                               {item.detail ? ` · ${item.detail}` : ''}
                             </p>
+                            <div className="mt-2 space-y-1 text-[0.72rem] font-semibold text-[#6b7280]">
+                              <p>
+                                最後一次：
+                                <span className="ml-1 font-black text-slate-700">
+                                  {formatMonthDayYear(item.lastCompletedOn, '尚未記錄')}
+                                </span>
+                              </p>
+                              <p>
+                                下一次：
+                                <span className={`ml-1 font-black ${
+                                  urgency === 'overdue'
+                                    ? 'text-[#d44]'
+                                    : urgency === 'soon'
+                                      ? 'text-[#c07800]'
+                                      : 'text-slate-700'
+                                }`}>
+                                  {formatMonthDayYear(item.dueOn, '未排程')}
+                                </span>
+                              </p>
+                            </div>
                           </div>
-                          <span className={`shrink-0 text-[0.72rem] font-black ${
-                            urgency === 'overdue' ? 'text-[#d44]' : urgency === 'soon' ? 'text-[#c07800]' : 'text-[#5f6368]'
+                          <span className={`shrink-0 rounded-full px-2.5 py-1 text-[0.68rem] font-black ${
+                            urgency === 'overdue'
+                              ? 'bg-[#fff1f1] text-[#d44]'
+                              : urgency === 'soon'
+                                ? 'bg-[#fff7e8] text-[#c07800]'
+                                : 'bg-[#f3f4f6] text-[#5f6368]'
                           }`}>
-                            {formatDueOn(item.dueOn)}
+                            {urgency === 'overdue' ? '逾期' : urgency === 'soon' ? '快到' : '正常'}
                           </span>
                         </div>
 
@@ -441,17 +463,31 @@ export function ReminderList({
 
                 return (
                   <div key={item.id} className="rounded-[1.25rem] border border-[#ece8e1] bg-white px-4 py-3 shadow-sm">
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[0.95rem] font-black text-[#202124]">{item.name}</p>
-                        <p className="mt-0.5 text-[0.7rem] font-semibold text-[#8f959c]">
-                          {FREQUENCY_LABELS[item.frequency] ?? item.frequency}
-                          {item.accountName ? ` · ${item.accountName}` : ''}
-                          {item.detail ? ` · ${item.detail}` : ''}
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[0.95rem] font-black text-[#202124]">{item.name}</p>
+                      <p className="mt-0.5 text-[0.7rem] font-semibold text-[#8f959c]">
+                        {FREQUENCY_LABELS[item.frequency] ?? item.frequency}
+                        {item.accountName ? ` · ${item.accountName}` : ''}
+                        {item.detail ? ` · ${item.detail}` : ''}
+                      </p>
+                      <div className="mt-2 space-y-1 text-[0.72rem] font-semibold text-[#6b7280]">
+                        <p>
+                          最後一次：
+                          <span className="ml-1 font-black text-slate-700">
+                            {formatMonthDayYear(item.lastCompletedOn, '尚未記錄')}
+                          </span>
+                        </p>
+                        <p>
+                          下一次：
+                          <span className="ml-1 font-black text-slate-700">
+                            {formatMonthDayYear(item.dueOn, '未排程')}
+                          </span>
                         </p>
                       </div>
-                      <span className="text-[0.72rem] font-black text-slate-400">已暫停</span>
                     </div>
+                    <span className="text-[0.72rem] font-black text-slate-400">已暫停</span>
+                  </div>
 
                     <div className="mt-3 flex flex-wrap gap-2">
                       <button
